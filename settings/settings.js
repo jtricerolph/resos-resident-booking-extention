@@ -3,9 +3,12 @@ const DEFAULT_SETTINGS = {
   newbookUsername: '',
   newbookPassword: '',
   newbookApiKey: '',
+  packageInventoryName: '',
   resosApiKey: '',
+  defaultTableArea: '',
   bookingRefFieldId: '',
-  hotelGuestFieldId: ''
+  hotelGuestFieldId: '',
+  dbbFieldId: ''
 };
 
 const elements = {
@@ -13,9 +16,12 @@ const elements = {
   newbookUsername: document.getElementById('newbookUsername'),
   newbookPassword: document.getElementById('newbookPassword'),
   newbookApiKey: document.getElementById('newbookApiKey'),
+  packageInventoryName: document.getElementById('packageInventoryName'),
   resosApiKey: document.getElementById('resosApiKey'),
+  defaultTableArea: document.getElementById('defaultTableArea'),
   bookingRefFieldId: document.getElementById('bookingRefFieldId'),
   hotelGuestFieldId: document.getElementById('hotelGuestFieldId'),
+  dbbFieldId: document.getElementById('dbbFieldId'),
   testNewbook: document.getElementById('testNewbook'),
   testResos: document.getElementById('testResos'),
   loadCustomFields: document.getElementById('loadCustomFields'),
@@ -32,15 +38,18 @@ async function loadSettings() {
     elements.newbookUsername.value = settings.newbookUsername || '';
     elements.newbookPassword.value = settings.newbookPassword || '';
     elements.newbookApiKey.value = settings.newbookApiKey || '';
+    elements.packageInventoryName.value = settings.packageInventoryName || '';
     elements.resosApiKey.value = settings.resosApiKey || '';
+    elements.defaultTableArea.value = settings.defaultTableArea || '';
 
     // Store field IDs to re-select after loading custom fields
     elements.bookingRefFieldId.dataset.savedValue = settings.bookingRefFieldId || '';
     elements.hotelGuestFieldId.dataset.savedValue = settings.hotelGuestFieldId || '';
+    elements.dbbFieldId.dataset.savedValue = settings.dbbFieldId || '';
 
     // If we have a Resos API key, try to load custom fields
     if (settings.resosApiKey) {
-      await loadCustomFieldOptions(settings.resosApiKey, settings.bookingRefFieldId, settings.hotelGuestFieldId);
+      await loadCustomFieldOptions(settings.resosApiKey, settings.bookingRefFieldId, settings.hotelGuestFieldId, settings.dbbFieldId);
     }
   } catch (error) {
     showStatus('Error loading settings: ' + error.message, 'error');
@@ -75,9 +84,12 @@ async function saveSettings() {
       newbookUsername: elements.newbookUsername.value.trim(),
       newbookPassword: elements.newbookPassword.value.trim(),
       newbookApiKey: elements.newbookApiKey.value.trim(),
+      packageInventoryName: elements.packageInventoryName.value.trim(),
       resosApiKey: elements.resosApiKey.value.trim(),
+      defaultTableArea: elements.defaultTableArea.value.trim(),
       bookingRefFieldId: elements.bookingRefFieldId.value,
-      hotelGuestFieldId: elements.hotelGuestFieldId.value
+      hotelGuestFieldId: elements.hotelGuestFieldId.value,
+      dbbFieldId: elements.dbbFieldId.value
     };
 
     await chrome.storage.sync.set({ settings });
@@ -183,7 +195,7 @@ async function testResosConnection() {
   }
 }
 
-async function loadCustomFieldOptions(apiKeyOverride, selectBookingRef, selectHotelGuest) {
+async function loadCustomFieldOptions(apiKeyOverride, selectBookingRef, selectHotelGuest, selectDbb) {
   const apiKey = apiKeyOverride || elements.resosApiKey.value.trim();
 
   if (!apiKey) {
@@ -215,6 +227,8 @@ async function loadCustomFieldOptions(apiKeyOverride, selectBookingRef, selectHo
     populateFieldSelect(elements.bookingRefFieldId, fields, selectBookingRef || elements.bookingRefFieldId.dataset.savedValue);
     // Populate hotel guest dropdown
     populateFieldSelect(elements.hotelGuestFieldId, fields, selectHotelGuest || elements.hotelGuestFieldId.dataset.savedValue);
+    // Populate DBB field dropdown
+    populateFieldSelect(elements.dbbFieldId, fields, selectDbb || elements.dbbFieldId.dataset.savedValue);
 
     if (!apiKeyOverride) {
       showStatus(`Loaded ${fields.length} custom fields from Resos.`, 'success');
@@ -264,7 +278,7 @@ elements.testResos.addEventListener('click', testResosConnection);
 elements.loadCustomFields.addEventListener('click', () => loadCustomFieldOptions());
 
 // Enter key saves on text inputs
-[elements.newbookRegion, elements.newbookUsername, elements.newbookPassword, elements.newbookApiKey, elements.resosApiKey].forEach(input => {
+[elements.newbookRegion, elements.newbookUsername, elements.newbookPassword, elements.newbookApiKey, elements.packageInventoryName, elements.resosApiKey, elements.defaultTableArea].forEach(input => {
   input.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') saveSettings();
   });

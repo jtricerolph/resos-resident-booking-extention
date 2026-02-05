@@ -35,6 +35,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
     await handleTabUpdate(tabId, tab.url);
   }
+  // Also forward URL changes mid-navigation (SPA)
+  if (changeInfo.url && tab.url && tab.url.includes('app.resos.com')) {
+    chrome.runtime.sendMessage({
+      action: 'urlChanged',
+      url: changeInfo.url
+    }).catch(() => {});
+  }
 });
 
 // Tab Activated Listener
@@ -43,6 +50,12 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const tab = await chrome.tabs.get(activeInfo.tabId);
     if (tab.url) {
       await handleTabUpdate(activeInfo.tabId, tab.url);
+      if (tab.url.includes('app.resos.com')) {
+        chrome.runtime.sendMessage({
+          action: 'urlChanged',
+          url: tab.url
+        }).catch(() => {});
+      }
     }
   } catch (error) {
     // Tab may have been closed
@@ -59,6 +72,12 @@ async function handleTabUpdate(tabId, url) {
         path: 'sidepanel/sidepanel.html',
         enabled: true
       });
+      // Auto-open sidepanel on Resos pages
+      try {
+        await chrome.sidePanel.open({ tabId });
+      } catch (_) {
+        // May fail if no user gesture yet — that's fine, toolbar click still works
+      }
       await chrome.action.setBadgeText({ tabId, text: '' });
       await chrome.action.setTitle({ tabId, title: 'Open Resident Booking Sidebar' });
     } else {
@@ -84,8 +103,18 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'settingsUpdated') {
     settings = message.settings;
-    // Forward to sidepanel
     chrome.runtime.sendMessage(message).catch(() => {});
+  } else if (message.action === 'getActiveTabUrl') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      sendResponse({ url: tabs[0]?.url || '' });
+    });
+    return true; // async response
+  } else if (message.action === 'navigateTab') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.update(tabs[0].id, { url: message.url });
+      }
+    });
   }
   return true;
 });

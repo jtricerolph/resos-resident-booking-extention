@@ -35,6 +35,14 @@
       </div>
     </div>
 
+    <!-- View: No Day Selected -->
+    <div id="view-no-day" class="view hidden">
+      <div class="empty-state">
+        <span class="material-symbols-outlined">calendar_today</span>
+        <p>Please select a day to show list of hotel residents.</p>
+      </div>
+    </div>
+
     <!-- View: Loading -->
     <div id="view-loading" class="view hidden">
       <div class="loading-state">
@@ -88,29 +96,43 @@
             <span class="material-symbols-outlined">meeting_room</span>
             <span>Room <strong id="confirm-room"></strong></span>
           </div>
+          <div class="confirm-detail">
+            <span class="material-symbols-outlined">calendar_today</span>
+            <span id="confirm-date"></span>
+          </div>
         </div>
       </div>
 
-      <div class="form-section">
+      <!-- Covers -->
+      <div id="covers-form" class="form-section">
         <div class="form-group">
-          <label for="confirm-covers">Number of covers</label>
+          <label for="confirm-covers">Covers</label>
           <input type="number" id="confirm-covers" min="1" max="20" />
         </div>
+      </div>
 
-        <div class="form-group">
-          <label for="confirm-time">Time</label>
-          <input type="time" id="confirm-time" />
+      <!-- Time Slots (both today and future) -->
+      <div id="timeslots-section" class="tables-section hidden">
+        <div id="timeslots-loading" class="tables-loading hidden">
+          <div class="spinner-sm"></div>
+          <span>Loading available times...</span>
+        </div>
+        <div id="timeslots-list"></div>
+        <div id="timeslots-empty" class="tables-empty hidden">
+          <p>No available times for this date and party size.</p>
+        </div>
+        <div id="timeslots-error" class="tables-error hidden">
+          <p id="timeslots-error-message"></p>
         </div>
       </div>
 
-      <!-- Available Tables -->
+      <!-- Available Tables (today only, shown after time selection) -->
       <div id="tables-section" class="tables-section hidden">
-        <h3>Select a Table</h3>
         <div id="tables-loading" class="tables-loading hidden">
           <div class="spinner-sm"></div>
           <span>Loading tables...</span>
         </div>
-        <div id="tables-list" class="tables-grid"></div>
+        <div id="tables-list"></div>
         <div id="tables-empty" class="tables-empty hidden">
           <p>No tables available for this time and party size.</p>
         </div>

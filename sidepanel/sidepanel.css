@@ -336,14 +336,40 @@ body {
   color: #9ca3af;
 }
 
-.matched-badge {
+.guest-card-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.matched-badge {
   padding: 2px 8px;
   background-color: #d1fae5;
   color: #065f46;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
+}
+
+.package-badge {
+  padding: 2px 8px;
+  background-color: #fef3c7;
+  color: #92400e;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.guest-card-package-alert {
+  border-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+.guest-card-package-alert:hover {
+  border-color: #d97706;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.2);
 }
 
 .guest-card-arrow {
@@ -421,6 +447,14 @@ body {
   gap: 12px;
 }
 
+.form-row {
+  flex-direction: row;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -470,23 +504,75 @@ body {
   font-size: 13px;
 }
 
+/* Collapsible Sections */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapsible-header:first-child {
+  padding-top: 0;
+}
+
+.collapsible-header:hover {
+  opacity: 0.8;
+}
+
+.collapsible-chevron {
+  font-size: 18px;
+  color: #6b7280;
+  transition: transform 0.2s;
+}
+
+.collapsible-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .tables-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(70px, 100px));
   gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tables-grid:last-child {
+  margin-bottom: 0;
 }
 
 .table-btn {
-  padding: 10px 8px;
+  padding: 14px 12px;
+  min-height: 48px;
+  max-width: 100px;
   background-color: #fff;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   color: #1f2937;
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+/* Allow wrapping only at <wbr> points */
+.table-btn wbr {
+  display: inline;
+}
+
+/* Enable wrapping when content overflows */
+.table-btn:has(wbr) {
+  white-space: normal;
 }
 
 .table-btn:hover {
@@ -497,6 +583,81 @@ body {
 .table-btn.selected {
   border-color: #3b82f6;
   background-color: #3b82f6;
+  color: white;
+}
+
+.table-btn-booked {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  border-style: dashed;
+}
+
+.table-btn-booked:hover {
+  background-color: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.table-btn-booked.selected {
+  background-color: #6b7280;
+  border-color: #6b7280;
+  border-style: solid;
+  color: white;
+}
+
+/* Time Slots Grid (Future dates) */
+.timeslots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.timeslots-grid:last-child {
+  margin-bottom: 0;
+}
+
+.timeslot-btn {
+  padding: 10px 8px;
+  min-height: 44px;
+  background-color: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.timeslot-btn:hover {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.timeslot-btn.selected {
+  border-color: #3b82f6;
+  background-color: #3b82f6;
+  color: white;
+}
+
+.timeslot-btn-booked {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  border-style: dashed;
+}
+
+.timeslot-btn-booked:hover {
+  background-color: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.timeslot-btn-booked.selected {
+  background-color: #6b7280;
+  border-color: #6b7280;
+  border-style: solid;
   color: white;
 }
 

@@ -6,21 +6,69 @@
 const STATE = {
   settings: null,
   view: 'loading',
+  contextDate: null,       // YYYY-MM-DD or null (no day selected)
+  isToday: false,
   newbookBookings: [],
   resosBookings: [],
   customFields: [],
   bookingRefFieldId: null,
   hotelGuestFieldId: null,
   hotelGuestYesChoiceId: null,
+  dbbFieldId: null,
+  dbbYesChoiceId: null,
+  groupExcludeFieldId: null,
   matchedBookingIds: new Set(),
+  matchedBookingResosMap: new Map(), // newbookBookingId -> resosBookingId
+  packageBookingIds: new Set(),
+  currentBaseUrl: null, // base URL for constructing Resos booking links
   selectedBooking: null,
   selectedTableId: null,
+  selectedTimeSlot: null,  // { time, openingHourId }
   availableTables: [],
   filterHideMatched: true,
   searchQuery: ''
 };
 
 let tableLoadDebounce = null;
+
+// ============================================================
+// URL PARSING
+// ============================================================
+// Matches: /bookings/(timetable|list|floorplan)/(today|YYYY-MM-DD)
+const DAY_VIEW_PATTERN = /\/bookings\/(?:timetable|list|floorplan)\/(today|\d{4}-\d{2}-\d{2})/i;
+
+function parseDateFromUrl(url) {
+  if (!url) return null;
+  const match = url.match(DAY_VIEW_PATTERN);
+  if (!match) return null;
+  const dateStr = match[1];
+  if (dateStr.toLowerCase() === 'today') return getTodayDateString();
+  return dateStr;
+}
+
+// Extract base URL up to and including the date for constructing booking links
+// e.g. https://app.resos.com/GwihQrTWk7QKEHna2/bookings/timetable/2026-02-05
+const BASE_URL_PATTERN = /(https:\/\/app\.resos\.com\/[^/]+\/bookings\/(?:timetable|list|floorplan)\/(?:today|\d{4}-\d{2}-\d{2}))/i;
+
+function parseBaseUrl(url) {
+  if (!url) return null;
+  const match = url.match(BASE_URL_PATTERN);
+  if (!match) return null;
+  // Replace /today with actual date so booking links work
+  return match[1].replace(/\/today$/i, '/' + getTodayDateString());
+}
+
+function isDateToday(dateStr) {
+  return dateStr === getTodayDateString();
+}
+
+function formatDateForDisplay(dateStr) {
+  if (!dateStr) return '';
+  if (isDateToday(dateStr)) return 'Today';
+  const d = new Date(dateStr + 'T12:00:00');
+  const options = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+  return d.toLocaleDateString('en-GB', options);
+}
 
 // ============================================================
 // API CLIENTS
@@ -33,8 +81,7 @@ class NewbookAPI {
     this.region = settings.newbookRegion || 'au';
   }
 
-  async fetchStayingTonight() {
-    const today = getTodayDateString();
+  async fetchStayingOnDate(dateStr) {
     const response = await fetch(`${this.baseUrl}/bookings_list`, {
       method: 'POST',
       headers: {
@@ -42,8 +89,8 @@ class NewbookAPI {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        period_from: `${today} 00:00:00`,
-        period_to: `${today} 23:59:59`,
+        period_from: `${dateStr} 00:00:00`,
+        period_to: `${dateStr} 23:59:59`,
         list_type: 'staying',
         region: this.region,
         api_key: this.apiKey
@@ -69,10 +116,9 @@ class ResosAPI {
     this.authHeader = 'Basic ' + btoa(`${settings.resosApiKey}:`);
   }
 
-  async fetchTodayBookings() {
-    const today = getTodayDateString();
-    const fromDateTime = `${today}T00:00:00`;
-    const toDateTime = `${today}T23:59:59`;
+  async fetchBookingsForDate(dateStr) {
+    const fromDateTime = `${dateStr}T00:00:00`;
+    const toDateTime = `${dateStr}T23:59:59`;
     let allBookings = [];
     let skip = 0;
     const limit = 100;
@@ -118,12 +164,34 @@ class ResosAPI {
     return await response.json();
   }
 
+  async fetchAvailableTimes(dateStr, people) {
+    const params = new URLSearchParams({
+      date: dateStr,
+      people: people.toString(),
+      onlyBookableOnline: 'false'
+    });
+
+    const response = await fetch(`${this.baseUrl}/bookingFlow/times?${params}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': this.authHeader,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Resos available times error: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
   async fetchAvailableTables(people, fromDateTime, toDateTime) {
     const params = new URLSearchParams({
       people: people.toString(),
       fromDateTime,
       toDateTime,
-      returnAllTables: 'false'
+      returnAllTables: 'true'
     });
 
     const response = await fetch(`${this.baseUrl}/bookingFlow/availableTables?${params}`, {
@@ -178,11 +246,9 @@ function getTodayDateString() {
 function titleCase(str) {
   if (!str) return '';
   return str.replace(/\w\S*/g, (word) => {
-    // Handle O'Brien, O'Connor etc
     if (word.length > 1 && word[1] === "'") {
       return word[0].toUpperCase() + "'" + word[2].toUpperCase() + word.slice(3).toLowerCase();
     }
-    // Handle McDonald, MacGregor etc
     if (word.toLowerCase().startsWith('mc') && word.length > 2) {
       return 'Mc' + word[2].toUpperCase() + word.slice(3).toLowerCase();
     }
@@ -226,28 +292,46 @@ function getGuestContact(booking, type) {
 
 function formatPhoneForResos(phone) {
   if (!phone) return '';
-  // Strip non-digits
   let digits = phone.replace(/\D/g, '');
-  // Remove leading 0
   if (digits.startsWith('0')) {
     digits = digits.substring(1);
   }
-  // Prepend +44 (UK default)
   return '+44' + digits;
 }
 
-function getNowRoundedTime() {
+function getCurrentHHMM() {
   const now = new Date();
-  const minutes = Math.round(now.getMinutes() / 15) * 15;
-  const hours = now.getHours() + (minutes >= 60 ? 1 : 0);
-  const mins = minutes >= 60 ? 0 : minutes;
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  return now.getHours() * 100 + now.getMinutes();
 }
 
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// "Table 1" → "T1", "Table 12" → "T12", "Table 1 + Table 2" → "T1+<wbr>2"
+function shortenTableName(name) {
+  if (!name) return '';
+  const parts = name.split(/\s*\+\s*/);
+  if (parts.length > 1) {
+    const shortened = parts.map(p => escapeHtml(shortenSingleTable(p)));
+    return shortened[0] + shortened.slice(1).map(s => '+<wbr>' + s.replace(/^T/, '')).join('');
+  }
+  return escapeHtml(shortenSingleTable(name));
+}
+
+function shortenSingleTable(name) {
+  const match = name.match(/^table\s+(\d+)$/i);
+  if (match) return 'T' + match[1];
+  return name;
+}
+
+// Format HHMM int (e.g. 1800) to "18:00"
+function formatHHMM(hhmm) {
+  const h = Math.floor(hhmm / 100);
+  const m = hhmm % 100;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 // ============================================================
@@ -286,6 +370,11 @@ async function loadSettings() {
 }
 
 async function loadData() {
+  if (!STATE.contextDate) {
+    showView('no-day');
+    return;
+  }
+
   showView('loading');
 
   try {
@@ -294,8 +383,8 @@ async function loadData() {
 
     // Parallel fetch
     const [newbookBookings, resosBookings, customFields] = await Promise.all([
-      newbookApi.fetchStayingTonight(),
-      resosApi.fetchTodayBookings(),
+      newbookApi.fetchStayingOnDate(STATE.contextDate),
+      resosApi.fetchBookingsForDate(STATE.contextDate),
       resosApi.fetchCustomFields()
     ]);
 
@@ -305,6 +394,7 @@ async function loadData() {
 
     resolveCustomFieldMappings();
     buildMatchedSet();
+    buildPackageSet();
     renderGuestList();
     showView('guest-list');
   } catch (error) {
@@ -320,7 +410,6 @@ async function loadData() {
 function resolveCustomFieldMappings() {
   const settings = STATE.settings;
 
-  // Booking # field
   if (settings.bookingRefFieldId) {
     STATE.bookingRefFieldId = settings.bookingRefFieldId;
   } else {
@@ -331,7 +420,6 @@ function resolveCustomFieldMappings() {
     STATE.bookingRefFieldId = field ? field._id : null;
   }
 
-  // Hotel Guest field
   if (settings.hotelGuestFieldId) {
     STATE.hotelGuestFieldId = settings.hotelGuestFieldId;
     const field = STATE.customFields.find(f => f._id === settings.hotelGuestFieldId);
@@ -352,6 +440,32 @@ function resolveCustomFieldMappings() {
       }
     }
   }
+
+  // GROUP/EXCLUDE field (auto-detect only)
+  const geField = STATE.customFields.find(f => (f.name || '') === 'GROUP/EXCLUDE');
+  STATE.groupExcludeFieldId = geField ? geField._id : null;
+
+  // DBB / Package field
+  if (settings.dbbFieldId) {
+    STATE.dbbFieldId = settings.dbbFieldId;
+    const field = STATE.customFields.find(f => f._id === settings.dbbFieldId);
+    if (field && field.multipleChoiceSelections) {
+      const yesChoice = field.multipleChoiceSelections.find(c => c.name.toLowerCase() === 'yes');
+      STATE.dbbYesChoiceId = yesChoice ? yesChoice._id : null;
+    }
+  } else {
+    const field = STATE.customFields.find(f => {
+      const name = (f.name || '').toLowerCase();
+      return name === 'dbb';
+    });
+    if (field) {
+      STATE.dbbFieldId = field._id;
+      if (field.multipleChoiceSelections) {
+        const yesChoice = field.multipleChoiceSelections.find(c => c.name.toLowerCase() === 'yes');
+        STATE.dbbYesChoiceId = yesChoice ? yesChoice._id : null;
+      }
+    }
+  }
 }
 
 // ============================================================
@@ -359,17 +473,109 @@ function resolveCustomFieldMappings() {
 // ============================================================
 function buildMatchedSet() {
   STATE.matchedBookingIds.clear();
+  STATE.matchedBookingResosMap.clear();
 
-  if (!STATE.bookingRefFieldId) return;
+  const activeStatuses = new Set(['approved', 'arrived', 'seated', 'left']);
+
+  // Build a lookup of Newbook group IDs for GROUP/EXCLUDE matching
+  const groupIdToBookingIds = new Map();
+  for (const nb of STATE.newbookBookings) {
+    const gid = nb.bookings_group_id;
+    if (gid) {
+      const gidStr = String(gid);
+      if (!groupIdToBookingIds.has(gidStr)) groupIdToBookingIds.set(gidStr, []);
+      groupIdToBookingIds.get(gidStr).push(String(nb.booking_id));
+    }
+  }
 
   for (const resosBooking of STATE.resosBookings) {
+    if (!activeStatuses.has(resosBooking.status)) continue;
     if (!resosBooking.customFields) continue;
-    for (const cf of resosBooking.customFields) {
-      // Match by field ID or by field name fallback
-      const isBookingRefField = cf._id === STATE.bookingRefFieldId ||
-        cf.id === STATE.bookingRefFieldId;
-      if (isBookingRefField && cf.value) {
-        STATE.matchedBookingIds.add(String(cf.value));
+
+    const resosId = resosBooking._id;
+
+    // Check Booking # field
+    if (STATE.bookingRefFieldId) {
+      for (const cf of resosBooking.customFields) {
+        const isBookingRefField = cf._id === STATE.bookingRefFieldId ||
+          cf.id === STATE.bookingRefFieldId;
+        if (isBookingRefField && cf.value) {
+          const nbId = String(cf.value);
+          STATE.matchedBookingIds.add(nbId);
+          STATE.matchedBookingResosMap.set(nbId, resosId);
+        }
+      }
+    }
+
+    // Check GROUP/EXCLUDE field
+    if (STATE.groupExcludeFieldId) {
+      for (const cf of resosBooking.customFields) {
+        const isGEField = cf._id === STATE.groupExcludeFieldId ||
+          cf.id === STATE.groupExcludeFieldId;
+        if (isGEField && cf.value) {
+          const parsed = parseGroupExcludeField(String(cf.value));
+          // Individual booking IDs: #12345
+          for (const id of parsed.individuals) {
+            STATE.matchedBookingIds.add(id);
+            STATE.matchedBookingResosMap.set(id, resosId);
+          }
+          // Group IDs: G#5678 → find all Newbook bookings in that group
+          for (const gid of parsed.groups) {
+            const nbIds = groupIdToBookingIds.get(gid) || [];
+            for (const nbId of nbIds) {
+              STATE.matchedBookingIds.add(nbId);
+              STATE.matchedBookingResosMap.set(nbId, resosId);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function parseGroupExcludeField(value) {
+  const result = { groups: [], individuals: [], excludes: [] };
+  if (!value) return result;
+
+  const entries = value.split(',');
+  for (let entry of entries) {
+    entry = entry.trim();
+    if (!entry) continue;
+    if (entry.toUpperCase().startsWith('NOT-#')) {
+      // Exclusion — not relevant for this extension, skip
+      continue;
+    } else if (entry.toUpperCase().startsWith('G#')) {
+      const id = entry.substring(2).trim();
+      if (id) result.groups.push(id);
+    } else if (entry.startsWith('#')) {
+      const id = entry.substring(1).trim();
+      if (id) result.individuals.push(id);
+    }
+  }
+  return result;
+}
+
+// ============================================================
+// PACKAGE / DBB DETECTION
+// ============================================================
+function buildPackageSet() {
+  STATE.packageBookingIds.clear();
+
+  const packageName = (STATE.settings.packageInventoryName || '').trim().toLowerCase();
+  if (!packageName) return;
+
+  const dateStr = STATE.contextDate;
+  if (!dateStr) return;
+
+  for (const booking of STATE.newbookBookings) {
+    if (!booking.inventory_items || !Array.isArray(booking.inventory_items)) continue;
+    for (const item of booking.inventory_items) {
+      if (item.stay_date === dateStr) {
+        const desc = (item.description || '').toLowerCase();
+        if (desc.includes(packageName)) {
+          STATE.packageBookingIds.add(String(booking.booking_id));
+          break;
+        }
       }
     }
   }
@@ -384,13 +590,12 @@ function renderGuestList() {
 
   let bookings = [...STATE.newbookBookings];
 
-  // Filter: hide matched
-  if (STATE.filterHideMatched) {
+  const isSearching = STATE.searchQuery.trim().length > 0;
+  if (STATE.filterHideMatched && !isSearching) {
     bookings = bookings.filter(b => !STATE.matchedBookingIds.has(String(b.booking_id)));
   }
 
-  // Filter: search
-  if (STATE.searchQuery.trim()) {
+  if (isSearching) {
     const q = STATE.searchQuery.toLowerCase();
     bookings = bookings.filter(b => {
       const name = getGuestFullName(b).toLowerCase();
@@ -400,20 +605,19 @@ function renderGuestList() {
     });
   }
 
-  // Update count
   document.getElementById('guest-count').textContent = bookings.length;
 
   if (bookings.length === 0) {
+    const dateLabel = STATE.isToday ? 'tonight' : 'on ' + formatDateForDisplay(STATE.contextDate);
     container.innerHTML = `
       <div class="empty-list">
         <span class="material-symbols-outlined">check_circle</span>
-        <p>${STATE.filterHideMatched ? 'All hotel guests have a Resos booking' : 'No hotel guests staying tonight'}</p>
+        <p>${STATE.filterHideMatched ? 'All hotel guests have a Resos booking' : 'No hotel guests staying ' + dateLabel}</p>
       </div>
     `;
     return;
   }
 
-  // Sort by surname
   bookings.sort((a, b) => getGuestSurname(a).localeCompare(getGuestSurname(b)));
 
   for (const booking of bookings) {
@@ -428,7 +632,21 @@ function createGuestCard(booking) {
   const guestName = getGuestFullName(booking);
   const room = booking.site_name || 'N/A';
   const totalGuests = getTotalGuests(booking);
-  const isMatched = STATE.matchedBookingIds.has(String(booking.booking_id));
+  const bookingIdStr = String(booking.booking_id);
+  const isMatched = STATE.matchedBookingIds.has(bookingIdStr);
+  const isPackage = STATE.packageBookingIds.has(bookingIdStr);
+
+  // Highlight package guests without a Resos booking
+  if (isPackage && !isMatched) {
+    card.classList.add('guest-card-package-alert');
+  }
+
+  let badges = '';
+  if (isPackage) badges += '<span class="package-badge">DBB</span>';
+  if (isMatched) badges += '<span class="matched-badge">Has booking</span>';
+
+  const resosBookingId = STATE.matchedBookingResosMap.get(bookingIdStr);
+  const arrowIcon = (isMatched && resosBookingId) ? 'open_in_new' : 'chevron_right';
 
   card.innerHTML = `
     <div class="guest-card-main">
@@ -445,21 +663,29 @@ function createGuestCard(booking) {
         <span class="guest-card-booking-id">#${booking.booking_id}</span>
       </div>
     </div>
-    ${isMatched ? '<span class="matched-badge">Has booking</span>' : ''}
-    <span class="material-symbols-outlined guest-card-arrow">chevron_right</span>
+    <div class="guest-card-badges">${badges}</div>
+    <span class="material-symbols-outlined guest-card-arrow">${arrowIcon}</span>
   `;
 
-  card.addEventListener('click', () => selectGuest(booking));
+  if (isMatched && resosBookingId && STATE.currentBaseUrl) {
+    // Open the existing Resos booking in the main window
+    card.addEventListener('click', () => {
+      const bookingUrl = `${STATE.currentBaseUrl}/${resosBookingId}`;
+      chrome.runtime.sendMessage({ action: 'navigateTab', url: bookingUrl });
+    });
+  } else {
+    card.addEventListener('click', () => selectGuest(booking));
+  }
   return card;
 }
 
 // ============================================================
-// GUEST SELECTION & TABLE LOADING
+// GUEST SELECTION
 // ============================================================
 function selectGuest(booking) {
   STATE.selectedBooking = booking;
   STATE.selectedTableId = null;
-  STATE.availableTables = [];
+  STATE.selectedTimeSlot = null;
 
   const guestName = getGuestFullName(booking);
   const totalGuests = getTotalGuests(booking);
@@ -467,36 +693,38 @@ function selectGuest(booking) {
   document.getElementById('confirm-guest-name').textContent = guestName;
   document.getElementById('confirm-booking-id').textContent = booking.booking_id;
   document.getElementById('confirm-room').textContent = booking.site_name || 'N/A';
-  document.getElementById('confirm-covers').value = totalGuests || 2;
-  document.getElementById('confirm-time').value = getNowRoundedTime();
+  document.getElementById('confirm-date').textContent = formatDateForDisplay(STATE.contextDate);
 
-  // Reset tables
+  // Reset sections
   document.getElementById('tables-section').classList.add('hidden');
+  document.getElementById('timeslots-section').classList.add('hidden');
   document.getElementById('create-booking-btn').disabled = true;
   hideFeedback();
 
+  // Unified: both today and future use covers + time slot selection
+  document.getElementById('confirm-covers').value = totalGuests || 2;
   showView('confirm');
-
-  // Load tables for default values
-  loadAvailableTables();
+  loadAvailableTimeSlots();
 }
 
+// ============================================================
+// TABLE LOADING (Today)
+// ============================================================
 async function loadAvailableTables() {
   const covers = parseInt(document.getElementById('confirm-covers').value);
-  const time = document.getElementById('confirm-time').value;
+  if (!covers || covers < 1 || !STATE.selectedTimeSlot) return;
 
-  if (!covers || covers < 1 || !time) return;
-
-  const today = getTodayDateString();
-  const fromDateTime = `${today}T${time}:00`;
-
-  // Calculate end time (2 hours later)
+  const time = STATE.selectedTimeSlot.time;
   const [hours, mins] = time.split(':').map(Number);
+  const timeFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+
+  const dateStr = STATE.contextDate;
+  const fromDateTime = `${dateStr}T${timeFormatted}:00`;
+
   const endDate = new Date();
   endDate.setHours(hours + 2, mins, 0, 0);
-  const toDateTime = `${today}T${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}:00`;
+  const toDateTime = `${dateStr}T${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}:00`;
 
-  // Show section and loading
   const section = document.getElementById('tables-section');
   section.classList.remove('hidden');
   document.getElementById('tables-loading').classList.remove('hidden');
@@ -518,7 +746,10 @@ async function loadAvailableTables() {
       return;
     }
 
-    renderTableButtons(tables);
+    const rendered = renderTableButtons(tables);
+    if (!rendered) {
+      document.getElementById('tables-empty').classList.remove('hidden');
+    }
   } catch (error) {
     console.error('Error loading tables:', error);
     document.getElementById('tables-loading').classList.add('hidden');
@@ -527,38 +758,301 @@ async function loadAvailableTables() {
   }
 }
 
+function getTableSortNumber(name) {
+  if (!name) return 9999;
+  const match = name.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 9999;
+}
+
 function renderTableButtons(tables) {
   const container = document.getElementById('tables-list');
   container.innerHTML = '';
 
-  for (const table of tables) {
-    const btn = document.createElement('button');
-    btn.className = 'table-btn';
+  const filtered = tables.filter(t => {
+    const name = t.name || '';
+    const plusCount = (name.match(/\+/g) || []).length;
+    return plusCount <= 1;
+  });
 
-    // Show table name, with area if available
-    let label = table.name || table._id;
-    if (table.area && table.area.name) {
-      label += ` (${table.area.name})`;
+  const grouped = new Map();
+  for (const table of filtered) {
+    const areaName = (table.area && table.area.name) || 'Other';
+    if (!grouped.has(areaName)) grouped.set(areaName, []);
+    grouped.get(areaName).push(table);
+  }
+
+  const defaultArea = (STATE.settings.defaultTableArea || '').trim().toLowerCase();
+  const sections = []; // track { header, content } for accordion
+
+  for (const [areaName, areaTables] of grouped) {
+    areaTables.sort((a, b) => getTableSortNumber(a.name) - getTableSortNumber(b.name));
+
+    // Determine if this area should be expanded
+    const isExpanded = defaultArea ? areaName.toLowerCase() === defaultArea : true;
+
+    if (grouped.size > 1 || areaName !== 'Other') {
+      // Collapsible header
+      const header = document.createElement('div');
+      header.className = 'collapsible-header' + (isExpanded ? ' expanded' : '');
+      header.innerHTML = `
+        <span class="material-symbols-outlined collapsible-chevron">${isExpanded ? 'expand_more' : 'chevron_right'}</span>
+        <span class="collapsible-title">${escapeHtml(areaName)}</span>
+      `;
+      container.appendChild(header);
+
+      const content = document.createElement('div');
+      content.className = 'collapsible-content';
+      if (!isExpanded) content.classList.add('hidden');
+
+      const grid = document.createElement('div');
+      grid.className = 'tables-grid';
+
+      for (const table of areaTables) {
+        grid.appendChild(createTableButton(table, areaName, container));
+      }
+
+      content.appendChild(grid);
+      container.appendChild(content);
+
+      sections.push({ header, content });
+
+      // Accordion handler — opening one closes others
+      header.addEventListener('click', () => {
+        const isNowExpanded = !content.classList.contains('hidden');
+        if (isNowExpanded) {
+          // Collapse this section
+          content.classList.add('hidden');
+          header.classList.remove('expanded');
+          header.querySelector('.collapsible-chevron').textContent = 'chevron_right';
+        } else {
+          // Collapse all other sections first
+          for (const s of sections) {
+            s.content.classList.add('hidden');
+            s.header.classList.remove('expanded');
+            s.header.querySelector('.collapsible-chevron').textContent = 'chevron_right';
+          }
+          // Expand this section
+          content.classList.remove('hidden');
+          header.classList.add('expanded');
+          header.querySelector('.collapsible-chevron').textContent = 'expand_more';
+        }
+      });
+    } else {
+      // Single "Other" area: flat grid, no header
+      const grid = document.createElement('div');
+      grid.className = 'tables-grid';
+      for (const table of areaTables) {
+        grid.appendChild(createTableButton(table, areaName, container));
+      }
+      container.appendChild(grid);
     }
-    btn.textContent = label;
-    btn.dataset.tableId = table._id;
-    btn.title = label;
+  }
 
-    btn.addEventListener('click', () => {
-      container.querySelectorAll('.table-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      STATE.selectedTableId = table._id;
-      document.getElementById('create-booking-btn').disabled = false;
-    });
+  return filtered.length > 0;
+}
 
-    container.appendChild(btn);
+function createTableButton(table, areaName, container) {
+  const btn = document.createElement('button');
+  btn.className = 'table-btn';
+  if (table.booked) {
+    btn.classList.add('table-btn-booked');
+  }
+  const fullName = table.name || table._id;
+  btn.innerHTML = shortenTableName(fullName);
+  btn.dataset.tableId = table._id;
+  btn.title = table.booked
+    ? `${fullName} (${areaName}) — in use`
+    : `${fullName} (${areaName})`;
+
+  btn.addEventListener('click', () => {
+    container.querySelectorAll('.table-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    STATE.selectedTableId = table._id;
+    document.getElementById('create-booking-btn').disabled = false;
+  });
+
+  return btn;
+}
+
+// ============================================================
+// TIME SLOT LOADING
+// ============================================================
+async function loadAvailableTimeSlots() {
+  const covers = parseInt(document.getElementById('confirm-covers').value);
+  if (!covers || covers < 1) return;
+
+  // Reset time slot and table state
+  STATE.selectedTimeSlot = null;
+  STATE.selectedTableId = null;
+  document.getElementById('tables-section').classList.add('hidden');
+  document.getElementById('create-booking-btn').disabled = true;
+
+  const section = document.getElementById('timeslots-section');
+  section.classList.remove('hidden');
+  document.getElementById('timeslots-loading').classList.remove('hidden');
+  document.getElementById('timeslots-list').innerHTML = '';
+  document.getElementById('timeslots-empty').classList.add('hidden');
+  document.getElementById('timeslots-error').classList.add('hidden');
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+    const times = await resosApi.fetchAvailableTimes(STATE.contextDate, covers);
+
+    document.getElementById('timeslots-loading').classList.add('hidden');
+
+    // Response is array of opening hour objects with availableTimes + unavailableTimes
+    const periods = times || [];
+    const hasAny = periods.some(p =>
+      (p.availableTimes && p.availableTimes.length > 0) ||
+      (p.unavailableTimes && p.unavailableTimes.length > 0));
+
+    if (!hasAny) {
+      document.getElementById('timeslots-empty').classList.remove('hidden');
+      return;
+    }
+
+    renderTimeSlots(periods);
+  } catch (error) {
+    console.error('Error loading time slots:', error);
+    document.getElementById('timeslots-loading').classList.add('hidden');
+    document.getElementById('timeslots-error').classList.remove('hidden');
+    document.getElementById('timeslots-error-message').textContent = 'Error loading times: ' + error.message;
   }
 }
 
-function debouncedLoadTables() {
+function parseTimeToHHMM(timeStr) {
+  const parts = timeStr.split(':').map(Number);
+  return parts[0] * 100 + (parts[1] || 0);
+}
+
+function renderTimeSlots(periods) {
+  const container = document.getElementById('timeslots-list');
+  container.innerHTML = '';
+
+  const nowHHMM = getCurrentHHMM();
+  const sections = []; // track { header, content } for accordion
+
+  // Default to last period with times (latest service, e.g. dinner)
+  let defaultExpandIndex = -1;
+  for (let i = periods.length - 1; i >= 0; i--) {
+    const p = periods[i];
+    if ((p.availableTimes && p.availableTimes.length > 0) ||
+        (p.unavailableTimes && p.unavailableTimes.length > 0)) {
+      defaultExpandIndex = i;
+      break;
+    }
+  }
+
+  let autoSelectBtn = null;
+
+  for (let i = 0; i < periods.length; i++) {
+    const period = periods[i];
+    const available = period.availableTimes || [];
+    const unavailable = period.unavailableTimes || [];
+
+    if (available.length === 0 && unavailable.length === 0) continue;
+
+    // Combine and sort all times
+    const availableSet = new Set(available);
+    const allTimesSet = new Set([...available, ...unavailable]);
+    const allSlots = [...allTimesSet]
+      .map(t => ({ timeStr: t, hhmm: parseTimeToHHMM(t) }))
+      .sort((a, b) => a.hhmm - b.hhmm);
+
+    if (allSlots.length === 0) continue;
+
+    const isExpanded = (i === defaultExpandIndex);
+    const periodName = period.name ||
+      `${allSlots[0].timeStr} - ${allSlots[allSlots.length - 1].timeStr}`;
+
+    // Collapsible header
+    const header = document.createElement('div');
+    header.className = 'collapsible-header' + (isExpanded ? ' expanded' : '');
+    header.innerHTML = `
+      <span class="material-symbols-outlined collapsible-chevron">${isExpanded ? 'expand_more' : 'chevron_right'}</span>
+      <span class="collapsible-title">${escapeHtml(periodName)}</span>
+    `;
+    container.appendChild(header);
+
+    // Collapsible content
+    const content = document.createElement('div');
+    content.className = 'collapsible-content';
+    if (!isExpanded) content.classList.add('hidden');
+
+    const grid = document.createElement('div');
+    grid.className = 'timeslots-grid';
+
+    for (const slot of allSlots) {
+      const isAvailable = availableSet.has(slot.timeStr);
+      const btn = document.createElement('button');
+      btn.className = 'timeslot-btn';
+      if (!isAvailable) {
+        btn.classList.add('timeslot-btn-booked');
+      }
+      btn.textContent = slot.timeStr;
+      btn.title = isAvailable ? slot.timeStr : `${slot.timeStr} — no availability`;
+
+      btn.addEventListener('click', () => {
+        container.querySelectorAll('.timeslot-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        STATE.selectedTimeSlot = {
+          time: slot.timeStr,
+          openingHourId: period._id
+        };
+
+        if (STATE.isToday) {
+          document.getElementById('create-booking-btn').disabled = true;
+          STATE.selectedTableId = null;
+          loadAvailableTables();
+        } else {
+          document.getElementById('create-booking-btn').disabled = false;
+        }
+      });
+
+      // Auto-select: first available slot >= now in default-expanded period (today only)
+      if (STATE.isToday && i === defaultExpandIndex && isAvailable && !autoSelectBtn && slot.hhmm >= nowHHMM) {
+        autoSelectBtn = btn;
+      }
+
+      grid.appendChild(btn);
+    }
+
+    content.appendChild(grid);
+    container.appendChild(content);
+    sections.push({ header, content });
+
+    // Accordion toggle: opening one closes others
+    header.addEventListener('click', () => {
+      const isNowExpanded = !content.classList.contains('hidden');
+      if (isNowExpanded) {
+        // Collapse this one
+        content.classList.add('hidden');
+        header.classList.remove('expanded');
+        header.querySelector('.collapsible-chevron').textContent = 'chevron_right';
+      } else {
+        // Collapse all others, expand this one
+        for (const s of sections) {
+          s.content.classList.add('hidden');
+          s.header.classList.remove('expanded');
+          s.header.querySelector('.collapsible-chevron').textContent = 'chevron_right';
+        }
+        content.classList.remove('hidden');
+        header.classList.add('expanded');
+        header.querySelector('.collapsible-chevron').textContent = 'expand_more';
+      }
+    });
+  }
+
+  // Auto-select next available time for today
+  if (autoSelectBtn) {
+    autoSelectBtn.click();
+  }
+}
+
+function debouncedLoadTimeSlots() {
   clearTimeout(tableLoadDebounce);
   tableLoadDebounce = setTimeout(() => {
-    loadAvailableTables();
+    loadAvailableTimeSlots();
   }, 500);
 }
 
@@ -567,12 +1061,14 @@ function debouncedLoadTables() {
 // ============================================================
 async function createBooking() {
   const booking = STATE.selectedBooking;
-  if (!booking || !STATE.selectedTableId) return;
+  if (!booking) return;
+  if (!STATE.selectedTimeSlot) return;
+  if (STATE.isToday && !STATE.selectedTableId) return;
 
   const guestName = getGuestFullName(booking);
   const covers = parseInt(document.getElementById('confirm-covers').value);
-  const time = document.getElementById('confirm-time').value;
-  const today = getTodayDateString();
+  const time = STATE.selectedTimeSlot.time;
+  const dateStr = STATE.contextDate;
 
   // Guest contact
   const rawPhone = getGuestContact(booking, 'phone') || getGuestContact(booking, 'mobile');
@@ -596,12 +1092,19 @@ async function createBooking() {
       multipleChoiceValueName: 'Yes'
     });
   }
+  if (STATE.dbbFieldId && STATE.dbbYesChoiceId && STATE.packageBookingIds.has(String(booking.booking_id))) {
+    customFields.push({
+      _id: STATE.dbbFieldId,
+      name: 'DBB',
+      value: STATE.dbbYesChoiceId,
+      multipleChoiceValueName: 'Yes'
+    });
+  }
 
   const bookingPayload = {
-    date: today,
+    date: dateStr,
     time: time,
     people: covers,
-    tables: [STATE.selectedTableId],
     guest: {
       name: guestName
     },
@@ -610,11 +1113,19 @@ async function createBooking() {
     customFields: customFields
   };
 
-  // Only add contact info if available
+  // Include selected table (today)
+  if (STATE.isToday && STATE.selectedTableId) {
+    bookingPayload.tables = [STATE.selectedTableId];
+  }
+
+  // Include opening hour for both today and future
+  if (STATE.selectedTimeSlot && STATE.selectedTimeSlot.openingHourId) {
+    bookingPayload.openingHourId = STATE.selectedTimeSlot.openingHourId;
+  }
+
   if (phone) bookingPayload.guest.phone = phone;
   if (email) bookingPayload.guest.email = email;
 
-  // Disable button
   const createBtn = document.getElementById('create-booking-btn');
   createBtn.disabled = true;
   createBtn.classList.add('loading');
@@ -624,12 +1135,10 @@ async function createBooking() {
     const resosApi = new ResosAPI(STATE.settings);
     await resosApi.createBooking(bookingPayload);
 
-    // Success
     document.getElementById('success-message').textContent =
-      `${guestName} - ${covers} covers at ${time}`;
+      `${guestName} - ${covers} covers at ${time} on ${formatDateForDisplay(dateStr)}`;
     showView('success');
 
-    // Mark as matched so it hides from the list
     STATE.matchedBookingIds.add(String(booking.booking_id));
   } catch (error) {
     console.error('Error creating booking:', error);
@@ -638,6 +1147,38 @@ async function createBooking() {
   } finally {
     createBtn.classList.remove('loading');
   }
+}
+
+// ============================================================
+// URL CHANGE HANDLING
+// ============================================================
+async function handleUrlChange(url) {
+  const newDate = parseDateFromUrl(url);
+  const oldDate = STATE.contextDate;
+
+  STATE.contextDate = newDate;
+  STATE.isToday = newDate ? isDateToday(newDate) : false;
+  STATE.currentBaseUrl = parseBaseUrl(url);
+
+  if (!newDate) {
+    showView('no-day');
+    return;
+  }
+
+  // Only reload if date actually changed
+  if (newDate !== oldDate) {
+    if (STATE.settings) {
+      await loadData();
+    }
+  }
+}
+
+async function getCurrentTabUrl() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'getActiveTabUrl' }, (response) => {
+      resolve(response?.url || '');
+    });
+  });
 }
 
 // ============================================================
@@ -651,6 +1192,17 @@ async function init() {
     return;
   }
 
+  // Get current tab URL and parse date
+  const url = await getCurrentTabUrl();
+  STATE.contextDate = parseDateFromUrl(url);
+  STATE.isToday = STATE.contextDate ? isDateToday(STATE.contextDate) : false;
+  STATE.currentBaseUrl = parseBaseUrl(url);
+
+  if (!STATE.contextDate) {
+    showView('no-day');
+    return;
+  }
+
   await loadData();
 }
 
@@ -659,7 +1211,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Refresh
   document.getElementById('refresh-btn').addEventListener('click', () => {
-    if (STATE.settings) loadData();
+    if (STATE.settings && STATE.contextDate) loadData();
   });
 
   // Settings
@@ -687,16 +1239,15 @@ document.addEventListener('DOMContentLoaded', () => {
     showView('guest-list');
   });
 
-  // Covers/time change -> reload tables (debounced)
-  document.getElementById('confirm-covers').addEventListener('change', debouncedLoadTables);
-  document.getElementById('confirm-time').addEventListener('change', debouncedLoadTables);
+  // Covers change -> reload time slots (debounced)
+  document.getElementById('confirm-covers').addEventListener('change', debouncedLoadTimeSlots);
 
   // Create booking
   document.getElementById('create-booking-btn').addEventListener('click', createBooking);
 
   // Error retry
   document.getElementById('error-retry-btn').addEventListener('click', () => {
-    if (STATE.settings) loadData();
+    if (STATE.settings && STATE.contextDate) loadData();
   });
 
   // Success done
@@ -706,10 +1257,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Listen for settings updates
+// Listen for messages from background
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === 'settingsUpdated') {
     STATE.settings = message.settings;
-    loadData();
+    if (STATE.contextDate) loadData();
+  } else if (message.action === 'urlChanged') {
+    handleUrlChange(message.url);
   }
 });
