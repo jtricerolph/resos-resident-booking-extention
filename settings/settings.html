@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resos Resident Booking - Settings</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Resos Resident Booking Settings</h1>
+    </header>
+
+    <main>
+      <section class="settings-section">
+        <h2>Newbook API</h2>
+        <div class="form-group">
+          <label for="newbookRegion">Region</label>
+          <input type="text" id="newbookRegion" placeholder="au" required>
+          <small>Newbook API region code (e.g., "au")</small>
+        </div>
+        <div class="form-group">
+          <label for="newbookUsername">Username</label>
+          <input type="text" id="newbookUsername" placeholder="username" required>
+          <small>Newbook API username for HTTP Basic Auth</small>
+        </div>
+        <div class="form-group">
+          <label for="newbookPassword">Password</label>
+          <input type="password" id="newbookPassword" placeholder="password" required>
+          <small>Newbook API password for HTTP Basic Auth</small>
+        </div>
+        <div class="form-group">
+          <label for="newbookApiKey">API Key</label>
+          <input type="text" id="newbookApiKey" placeholder="your-api-key" required>
+          <small>Newbook API key (sent in request body)</small>
+        </div>
+        <div class="button-group">
+          <button id="testNewbook" class="button button-secondary">Test Newbook Connection</button>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Resos API</h2>
+        <div class="form-group">
+          <label for="resosApiKey">API Key</label>
+          <input type="text" id="resosApiKey" placeholder="your-resos-api-key" required>
+          <small>Resos API key (used as Basic Auth username)</small>
+        </div>
+        <div class="button-group">
+          <button id="testResos" class="button button-secondary">Test Resos Connection</button>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Custom Field Mapping</h2>
+        <p class="section-description">Map Resos custom fields for linking hotel bookings. Leave on "Auto-detect" to find fields by name automatically.</p>
+
+        <div class="form-group">
+          <label for="bookingRefFieldId">Booking # Field</label>
+          <select id="bookingRefFieldId">
+            <option value="">Auto-detect</option>
+          </select>
+          <small>Resos custom field used to store the Newbook booking ID</small>
+        </div>
+
+        <div class="form-group">
+          <label for="hotelGuestFieldId">Hotel Guest Field</label>
+          <select id="hotelGuestFieldId">
+            <option value="">Auto-detect</option>
+          </select>
+          <small>Resos custom field for marking a booking as a hotel guest (optional)</small>
+        </div>
+
+        <div class="button-group">
+          <button id="loadCustomFields" class="button button-secondary">Load Custom Fields from Resos</button>
+        </div>
+      </section>
+
+      <div class="button-group">
+        <button id="saveSettings" class="button button-primary">Save Settings</button>
+      </div>
+
+      <div id="status" class="status hidden"></div>
+    </main>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

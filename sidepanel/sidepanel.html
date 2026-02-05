@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resident Booking</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="sidebar-container">
+
+    <!-- Header -->
+    <header class="sidebar-header">
+      <h1>
+        <span class="material-symbols-outlined">hotel</span>
+        Resident Walk-ins
+      </h1>
+      <div class="header-actions">
+        <button id="refresh-btn" class="icon-btn" title="Refresh">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+        <button id="settings-btn" class="icon-btn" title="Settings">
+          <span class="material-symbols-outlined">settings</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- View: Not Configured -->
+    <div id="view-not-configured" class="view hidden">
+      <div class="empty-state">
+        <span class="material-symbols-outlined">settings</span>
+        <p>Please configure API settings before using the extension.</p>
+        <button id="open-settings-btn" class="btn-primary">Open Settings</button>
+      </div>
+    </div>
+
+    <!-- View: Loading -->
+    <div id="view-loading" class="view hidden">
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading hotel guests...</p>
+      </div>
+    </div>
+
+    <!-- View: Error -->
+    <div id="view-error" class="view hidden">
+      <div class="error-state">
+        <span class="material-symbols-outlined">error</span>
+        <p id="error-message"></p>
+        <button id="error-retry-btn" class="btn-primary">Retry</button>
+      </div>
+    </div>
+
+    <!-- View: Guest List -->
+    <div id="view-guest-list" class="view hidden">
+      <div class="filter-bar">
+        <label class="filter-toggle">
+          <input type="checkbox" id="filter-matched" checked>
+          <span>Hide with existing booking</span>
+        </label>
+        <span id="guest-count" class="guest-count-badge">0</span>
+      </div>
+
+      <div class="search-bar">
+        <span class="material-symbols-outlined">search</span>
+        <input type="text" id="guest-search" placeholder="Search guests..." />
+      </div>
+
+      <div id="guest-list" class="guest-list"></div>
+    </div>
+
+    <!-- View: Confirm Booking -->
+    <div id="view-confirm" class="view hidden">
+      <button id="back-to-list-btn" class="back-btn">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Back to guest list
+      </button>
+
+      <div class="confirm-card">
+        <h2 id="confirm-guest-name"></h2>
+        <div class="confirm-details">
+          <div class="confirm-detail">
+            <span class="material-symbols-outlined">tag</span>
+            <span>Booking #<strong id="confirm-booking-id"></strong></span>
+          </div>
+          <div class="confirm-detail">
+            <span class="material-symbols-outlined">meeting_room</span>
+            <span>Room <strong id="confirm-room"></strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-group">
+          <label for="confirm-covers">Number of covers</label>
+          <input type="number" id="confirm-covers" min="1" max="20" />
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-time">Time</label>
+          <input type="time" id="confirm-time" />
+        </div>
+      </div>
+
+      <!-- Available Tables -->
+      <div id="tables-section" class="tables-section hidden">
+        <h3>Select a Table</h3>
+        <div id="tables-loading" class="tables-loading hidden">
+          <div class="spinner-sm"></div>
+          <span>Loading tables...</span>
+        </div>
+        <div id="tables-list" class="tables-grid"></div>
+        <div id="tables-empty" class="tables-empty hidden">
+          <p>No tables available for this time and party size.</p>
+        </div>
+        <div id="tables-error" class="tables-error hidden">
+          <p id="tables-error-message"></p>
+        </div>
+      </div>
+
+      <button id="create-booking-btn" class="btn-primary btn-full" disabled>
+        <span class="material-symbols-outlined">restaurant</span>
+        Create Resos Booking
+      </button>
+
+      <div id="create-feedback" class="feedback hidden"></div>
+    </div>
+
+    <!-- View: Success -->
+    <div id="view-success" class="view hidden">
+      <div class="success-state">
+        <span class="material-symbols-outlined">check_circle</span>
+        <h2>Booking Created!</h2>
+        <p id="success-message"></p>
+        <button id="success-done-btn" class="btn-primary">Done</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

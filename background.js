@@ -1,0 +1,93 @@
+// Background Service Worker for Resos Resident Booking
+
+let settings = null;
+
+async function loadSettings() {
+  try {
+    const result = await chrome.storage.sync.get('settings');
+    settings = result.settings || null;
+    return settings;
+  } catch (error) {
+    console.error('Error loading settings:', error);
+    return null;
+  }
+}
+
+// Initialize on install/update
+chrome.runtime.onInstalled.addListener(async () => {
+  await loadSettings();
+  try {
+    await chrome.sidePanel.setOptions({
+      path: 'sidepanel/sidepanel.html',
+      enabled: false
+    });
+  } catch (error) {
+    console.error('Error setting global sidepanel options:', error);
+  }
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await loadSettings();
+});
+
+// Tab Update Listener
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    await handleTabUpdate(tabId, tab.url);
+  }
+});
+
+// Tab Activated Listener
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    if (tab.url) {
+      await handleTabUpdate(activeInfo.tabId, tab.url);
+    }
+  } catch (error) {
+    // Tab may have been closed
+  }
+});
+
+async function handleTabUpdate(tabId, url) {
+  const isResosDomain = url.includes('app.resos.com');
+
+  try {
+    if (isResosDomain) {
+      await chrome.sidePanel.setOptions({
+        tabId,
+        path: 'sidepanel/sidepanel.html',
+        enabled: true
+      });
+      await chrome.action.setBadgeText({ tabId, text: '' });
+      await chrome.action.setTitle({ tabId, title: 'Open Resident Booking Sidebar' });
+    } else {
+      await chrome.sidePanel.setOptions({ tabId, enabled: false });
+      await chrome.action.setBadgeText({ tabId, text: '' });
+      await chrome.action.setTitle({ tabId, title: 'Resos Resident Booking' });
+    }
+  } catch (error) {
+    console.error('Error handling tab update:', error);
+  }
+}
+
+// Toolbar click opens side panel
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (error) {
+    console.error('Failed to open sidepanel:', error);
+  }
+});
+
+// Message listener
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'settingsUpdated') {
+    settings = message.settings;
+    // Forward to sidepanel
+    chrome.runtime.sendMessage(message).catch(() => {});
+  }
+  return true;
+});
+
+loadSettings();
