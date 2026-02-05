@@ -30,6 +30,10 @@ const STATE = {
 };
 
 let tableLoadDebounce = null;
+let autoRefreshTimer = null;
+
+// Connect a port so background can track when the sidepanel opens/closes
+chrome.runtime.connect({ name: 'sidepanel' });
 
 // ============================================================
 // URL PARSING
@@ -209,6 +213,22 @@ class ResosAPI {
     return await response.json();
   }
 
+  async fetchOpeningHours() {
+    const response = await fetch(`${this.baseUrl}/openingHours`, {
+      method: 'GET',
+      headers: {
+        'Authorization': this.authHeader,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Resos opening hours error: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
   async createBooking(bookingData) {
     const response = await fetch(`${this.baseUrl}/bookings`, {
       method: 'POST',
@@ -226,6 +246,28 @@ class ResosAPI {
         errorDetail = errorBody ? ` - ${errorBody}` : '';
       } catch (_) {}
       throw new Error(`Resos create booking error: ${response.status}${errorDetail}`);
+    }
+
+    return await response.json();
+  }
+
+  async updateBooking(bookingId, data) {
+    const response = await fetch(`${this.baseUrl}/bookings/${bookingId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': this.authHeader,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const errorBody = await response.text();
+        errorDetail = errorBody ? ` - ${errorBody}` : '';
+      } catch (_) {}
+      throw new Error(`Resos update booking error: ${response.status}${errorDetail}`);
     }
 
     return await response.json();
@@ -397,6 +439,7 @@ async function loadData() {
     buildPackageSet();
     renderGuestList();
     showView('guest-list');
+    resetAutoRefreshTimer();
   } catch (error) {
     console.error('Error loading data:', error);
     document.getElementById('error-message').textContent = error.message;
@@ -605,7 +648,19 @@ function renderGuestList() {
     });
   }
 
-  document.getElementById('guest-count').textContent = bookings.length;
+  // Show hidden matched count when filter is active
+  const hiddenCountEl = document.getElementById('hidden-count');
+  if (STATE.filterHideMatched && !isSearching) {
+    const hiddenCount = STATE.newbookBookings.filter(b => STATE.matchedBookingIds.has(String(b.booking_id))).length;
+    if (hiddenCount > 0) {
+      hiddenCountEl.textContent = hiddenCount;
+      hiddenCountEl.classList.remove('hidden');
+    } else {
+      hiddenCountEl.classList.add('hidden');
+    }
+  } else {
+    hiddenCountEl.classList.add('hidden');
+  }
 
   if (bookings.length === 0) {
     const dateLabel = STATE.isToday ? 'tonight' : 'on ' + formatDateForDisplay(STATE.contextDate);
@@ -618,11 +673,49 @@ function renderGuestList() {
     return;
   }
 
-  bookings.sort((a, b) => getGuestSurname(a).localeCompare(getGuestSurname(b)));
+  bookings.sort((a, b) => {
+    const roomA = a.site_name || '';
+    const roomB = b.site_name || '';
+    const numA = parseInt(roomA, 10);
+    const numB = parseInt(roomB, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    return roomA.localeCompare(roomB, undefined, { numeric: true });
+  });
 
   for (const booking of bookings) {
     container.appendChild(createGuestCard(booking));
   }
+
+  updateStatsBar();
+  updateMarkLeftButton();
+}
+
+function getNewbookStatusClass(status) {
+  switch ((status || '').toLowerCase()) {
+    case 'unconfirmed': return 'nb-status-unconfirmed';
+    case 'confirmed': return 'nb-status-confirmed';
+    case 'arrived': return 'nb-status-arrived';
+    case 'departed': return 'nb-status-departed';
+    default: return 'nb-status-default';
+  }
+}
+
+function getStayNightIcons(booking) {
+  if (!booking.booking_arrival || !booking.booking_departure) return '';
+  const arrivalDate = booking.booking_arrival.split(' ')[0];
+  const departureDate = booking.booking_departure.split(' ')[0];
+  // Last night = the day before departure (checkout morning)
+  const depDate = new Date(departureDate + 'T12:00:00');
+  depDate.setDate(depDate.getDate() - 1);
+  const lastNightDate = `${depDate.getFullYear()}-${String(depDate.getMonth() + 1).padStart(2, '0')}-${String(depDate.getDate()).padStart(2, '0')}`;
+
+  const isFirstNight = arrivalDate === STATE.contextDate;
+  const isLastNight = lastNightDate === STATE.contextDate;
+
+  let icons = '';
+  if (isFirstNight) icons += '<span class="material-symbols-outlined night-icon night-icon-arrive" title="First night (arriving)">flight_land</span>';
+  if (isLastNight) icons += '<span class="material-symbols-outlined night-icon night-icon-depart" title="Last night (departing)">flight_takeoff</span>';
+  return icons;
 }
 
 function createGuestCard(booking) {
@@ -641,16 +734,23 @@ function createGuestCard(booking) {
     card.classList.add('guest-card-package-alert');
   }
 
-  let badges = '';
-  if (isPackage) badges += '<span class="package-badge">DBB</span>';
-  if (isMatched) badges += '<span class="matched-badge">Has booking</span>';
-
   const resosBookingId = STATE.matchedBookingResosMap.get(bookingIdStr);
   const arrowIcon = (isMatched && resosBookingId) ? 'open_in_new' : 'chevron_right';
 
+  const status = booking.booking_status || '';
+  const statusClass = getNewbookStatusClass(status);
+  const nightIcons = getStayNightIcons(booking);
+
+  const dbbInline = isPackage ? `<span class="package-badge">DBB ${totalGuests}pax</span>` : '';
+  const matchedIcon = isMatched ? '<span class="material-symbols-outlined matched-icon" title="Has Resos booking">restaurant</span>' : '';
+
   card.innerHTML = `
     <div class="guest-card-main">
-      <div class="guest-card-name">${escapeHtml(guestName)}</div>
+      <div class="guest-card-name">
+        ${escapeHtml(guestName)}
+        <span class="nb-status-badge ${statusClass}">${escapeHtml(status).toUpperCase()}</span>
+        ${nightIcons}
+      </div>
       <div class="guest-card-details">
         <span class="guest-card-room">
           <span class="material-symbols-outlined">meeting_room</span>
@@ -661,9 +761,10 @@ function createGuestCard(booking) {
           ${totalGuests}
         </span>
         <span class="guest-card-booking-id">#${booking.booking_id}</span>
+        ${dbbInline}
       </div>
     </div>
-    <div class="guest-card-badges">${badges}</div>
+    ${matchedIcon}
     <span class="material-symbols-outlined guest-card-arrow">${arrowIcon}</span>
   `;
 
@@ -896,22 +997,31 @@ async function loadAvailableTimeSlots() {
 
   try {
     const resosApi = new ResosAPI(STATE.settings);
-    const times = await resosApi.fetchAvailableTimes(STATE.contextDate, covers);
+    const [times, openingHours] = await Promise.all([
+      resosApi.fetchAvailableTimes(STATE.contextDate, covers),
+      resosApi.fetchOpeningHours()
+    ]);
 
     document.getElementById('timeslots-loading').classList.add('hidden');
 
-    // Response is array of opening hour objects with availableTimes + unavailableTimes
+    // Build opening hours lookup by _id
+    const ohMap = new Map();
+    for (const oh of openingHours) {
+      ohMap.set(oh._id, oh);
+    }
+
+    // Response is array of opening hour period objects with availableTimes
     const periods = times || [];
     const hasAny = periods.some(p =>
-      (p.availableTimes && p.availableTimes.length > 0) ||
-      (p.unavailableTimes && p.unavailableTimes.length > 0));
+      ohMap.has(p._id) ||
+      (p.availableTimes && p.availableTimes.length > 0));
 
     if (!hasAny) {
       document.getElementById('timeslots-empty').classList.remove('hidden');
       return;
     }
 
-    renderTimeSlots(periods);
+    renderTimeSlots(periods, ohMap);
   } catch (error) {
     console.error('Error loading time slots:', error);
     document.getElementById('timeslots-loading').classList.add('hidden');
@@ -925,19 +1035,37 @@ function parseTimeToHHMM(timeStr) {
   return parts[0] * 100 + (parts[1] || 0);
 }
 
-function renderTimeSlots(periods) {
+function generateSlotsFromRange(openStr, closeStr, intervalMinutes = 15) {
+  const openHHMM = parseTimeToHHMM(openStr);
+  const closeHHMM = parseTimeToHHMM(closeStr);
+  const slots = [];
+  let current = openHHMM;
+  while (current < closeHHMM) {
+    const h = Math.floor(current / 100);
+    const m = current % 100;
+    slots.push({
+      timeStr: `${h}:${String(m).padStart(2, '0')}`,
+      hhmm: current
+    });
+    // Advance by interval
+    const totalMins = h * 60 + m + intervalMinutes;
+    current = Math.floor(totalMins / 60) * 100 + (totalMins % 60);
+  }
+  return slots;
+}
+
+function renderTimeSlots(periods, ohMap) {
   const container = document.getElementById('timeslots-list');
   container.innerHTML = '';
 
   const nowHHMM = getCurrentHHMM();
   const sections = []; // track { header, content } for accordion
 
-  // Default to last period with times (latest service, e.g. dinner)
+  // Default to last period with any data (latest service, e.g. dinner)
   let defaultExpandIndex = -1;
   for (let i = periods.length - 1; i >= 0; i--) {
     const p = periods[i];
-    if ((p.availableTimes && p.availableTimes.length > 0) ||
-        (p.unavailableTimes && p.unavailableTimes.length > 0)) {
+    if (ohMap.has(p._id) || (p.availableTimes && p.availableTimes.length > 0)) {
       defaultExpandIndex = i;
       break;
     }
@@ -948,16 +1076,39 @@ function renderTimeSlots(periods) {
   for (let i = 0; i < periods.length; i++) {
     const period = periods[i];
     const available = period.availableTimes || [];
-    const unavailable = period.unavailableTimes || [];
 
-    if (available.length === 0 && unavailable.length === 0) continue;
+    // Normalize available times to "H:MM" format for consistent lookup
+    const normalizedAvailable = new Set(available.map(t => {
+      const parts = t.split(':');
+      return parseInt(parts[0]) + ':' + (parts[1] || '00').padStart(2, '0');
+    }));
 
-    // Combine and sort all times
-    const availableSet = new Set(available);
-    const allTimesSet = new Set([...available, ...unavailable]);
-    const allSlots = [...allTimesSet]
-      .map(t => ({ timeStr: t, hhmm: parseTimeToHHMM(t) }))
-      .sort((a, b) => a.hhmm - b.hhmm);
+    // Build slot list from opening hours (open to close-duration at interval steps)
+    const oh = ohMap.get(period._id);
+    let allSlots;
+    if (oh && oh.open != null && oh.close != null) {
+      const interval = (oh.seating && oh.seating.interval) || 15;
+      const duration = (oh.seating && oh.seating.duration) || 120;
+      const openMins = Math.floor(oh.open / 100) * 60 + (oh.open % 100);
+      const closeMins = Math.floor(oh.close / 100) * 60 + (oh.close % 100);
+      // Last bookable slot: close minus duration (booking must fit within hours)
+      const lastBookableMins = closeMins - duration;
+      // Pass lastBookable + interval as exclusive end so last slot is included
+      const endMins = lastBookableMins + interval;
+      const fmtMins = (mins) => {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return `${h}:${String(m).padStart(2, '0')}`;
+      };
+      allSlots = generateSlotsFromRange(fmtMins(openMins), fmtMins(endMins), interval);
+    } else if (available.length > 0) {
+      // Fallback: just show available times directly (all clickable)
+      allSlots = available
+        .map(t => ({ timeStr: t, hhmm: parseTimeToHHMM(t) }))
+        .sort((a, b) => a.hhmm - b.hhmm);
+    } else {
+      continue; // no opening hours and no available times
+    }
 
     if (allSlots.length === 0) continue;
 
@@ -983,7 +1134,7 @@ function renderTimeSlots(periods) {
     grid.className = 'timeslots-grid';
 
     for (const slot of allSlots) {
-      const isAvailable = availableSet.has(slot.timeStr);
+      const isAvailable = normalizedAvailable.has(slot.timeStr);
       const btn = document.createElement('button');
       btn.className = 'timeslot-btn';
       if (!isAvailable) {
@@ -1009,8 +1160,8 @@ function renderTimeSlots(periods) {
         }
       });
 
-      // Auto-select: first available slot >= now in default-expanded period (today only)
-      if (STATE.isToday && i === defaultExpandIndex && isAvailable && !autoSelectBtn && slot.hhmm >= nowHHMM) {
+      // Auto-select: slot closest to current time in default-expanded period (today, for walk-ins)
+      if (STATE.isToday && i === defaultExpandIndex && !autoSelectBtn && slot.hhmm >= nowHHMM) {
         autoSelectBtn = btn;
       }
 
@@ -1182,6 +1333,246 @@ async function getCurrentTabUrl() {
 }
 
 // ============================================================
+// AUTO-REFRESH
+// ============================================================
+function resetAutoRefreshTimer() {
+  clearTimeout(autoRefreshTimer);
+  autoRefreshTimer = null;
+
+  const seconds = STATE.settings && STATE.settings.autoRefreshSeconds;
+  if (!seconds || seconds <= 0) return;
+
+  // Only auto-refresh when on the guest list view
+  if (STATE.view !== 'guest-list') return;
+  if (!STATE.contextDate || !STATE.settings) return;
+
+  autoRefreshTimer = setTimeout(() => {
+    if (STATE.view === 'guest-list' && STATE.contextDate && STATE.settings) {
+      loadData();
+    }
+  }, seconds * 1000);
+}
+
+// ============================================================
+// MARK PAST AS LEFT
+// ============================================================
+function isBookingPast(booking) {
+  // For past dates, all bookings are considered past
+  if (STATE.contextDate < getTodayDateString()) return true;
+  // For today, check if booking time + duration has elapsed
+  if (!booking.dateTime) return false;
+  const start = new Date(booking.dateTime).getTime();
+  const durationMs = (booking.duration || 0) * 60000;
+  return (start + durationMs) <= Date.now();
+}
+
+function updateStatsBar() {
+  const total = STATE.newbookBookings.length;
+  const matched = STATE.newbookBookings.filter(b => STATE.matchedBookingIds.has(String(b.booking_id))).length;
+
+  let arrivalsTotal = 0, arrivalsMatched = 0;
+  let departuresTotal = 0, departuresMatched = 0;
+
+  for (const booking of STATE.newbookBookings) {
+    const isMatched = STATE.matchedBookingIds.has(String(booking.booking_id));
+
+    if (booking.booking_arrival) {
+      const arrivalDate = booking.booking_arrival.split(' ')[0];
+      if (arrivalDate === STATE.contextDate) {
+        arrivalsTotal++;
+        if (isMatched) arrivalsMatched++;
+      }
+    }
+    if (booking.booking_departure) {
+      const departureDate = booking.booking_departure.split(' ')[0];
+      const depDate = new Date(departureDate + 'T12:00:00');
+      depDate.setDate(depDate.getDate() - 1);
+      const lastNightDate = `${depDate.getFullYear()}-${String(depDate.getMonth() + 1).padStart(2, '0')}-${String(depDate.getDate()).padStart(2, '0')}`;
+      if (lastNightDate === STATE.contextDate) {
+        departuresTotal++;
+        if (isMatched) departuresMatched++;
+      }
+    }
+  }
+
+  // Resos booking stats
+  const activeStatuses = new Set(['approved', 'arrived', 'seated', 'left']);
+  let resosTotalBookings = 0, resosTotalCovers = 0;
+  let dbbBookings = 0, dbbCovers = 0;
+  let nonResidentBookings = 0, nonResidentCovers = 0;
+  let hotelGuestBookings = 0, hotelGuestCovers = 0;
+
+  for (const b of STATE.resosBookings) {
+    if (!activeStatuses.has(b.status)) continue;
+
+    resosTotalBookings++;
+    resosTotalCovers += b.people || 0;
+
+    let isHotelGuest = false;
+    let isDbb = false;
+
+    if (b.customFields) {
+      for (const cf of b.customFields) {
+        if (STATE.hotelGuestFieldId && STATE.hotelGuestYesChoiceId &&
+            (cf._id === STATE.hotelGuestFieldId || cf.id === STATE.hotelGuestFieldId) &&
+            cf.value === STATE.hotelGuestYesChoiceId) {
+          isHotelGuest = true;
+        }
+        if (STATE.dbbFieldId && STATE.dbbYesChoiceId &&
+            (cf._id === STATE.dbbFieldId || cf.id === STATE.dbbFieldId) &&
+            cf.value === STATE.dbbYesChoiceId) {
+          isDbb = true;
+        }
+      }
+    }
+
+    if (isDbb) {
+      dbbBookings++;
+      dbbCovers += b.people || 0;
+    }
+
+    if (isHotelGuest) {
+      hotelGuestBookings++;
+      hotelGuestCovers += b.people || 0;
+    } else {
+      nonResidentBookings++;
+      nonResidentCovers += b.people || 0;
+    }
+  }
+
+  document.getElementById('stat-total').textContent = `${matched}/${total}`;
+  document.getElementById('stat-arrivals').textContent = `${arrivalsMatched}/${arrivalsTotal}`;
+  document.getElementById('stat-departures').textContent = `${departuresMatched}/${departuresTotal}`;
+  document.getElementById('stat-resos-total').textContent = `${resosTotalBookings} (${resosTotalCovers})`;
+  document.getElementById('stat-dbb').textContent = `${dbbBookings} (${dbbCovers})`;
+  document.getElementById('stat-nonresident').textContent = `${nonResidentBookings} (${nonResidentCovers})`;
+  document.getElementById('stat-hotelguest').textContent = `${hotelGuestBookings} (${hotelGuestCovers})`;
+}
+
+function updateMarkLeftButton() {
+  const btn = document.getElementById('mark-all-left-btn');
+  const count = STATE.resosBookings.filter(
+    b => (b.status === 'seated' || b.status === 'arrived') && isBookingPast(b)
+  ).length;
+
+  const isTodayOrPast = STATE.contextDate && STATE.contextDate <= getTodayDateString();
+  if (isTodayOrPast && count > 0) {
+    btn.classList.remove('hidden');
+    btn.innerHTML = `<span class="material-symbols-outlined">logout</span> Mark past as left (${count})`;
+    btn.disabled = false;
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+async function markAllAsLeft() {
+  const btn = document.getElementById('mark-all-left-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Refreshing...';
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+
+    // Fresh fetch to pick up any changes made in Resos since last load
+    const freshBookings = await resosApi.fetchBookingsForDate(STATE.contextDate);
+    STATE.resosBookings = freshBookings;
+    buildMatchedSet();
+    renderGuestList();
+
+    const targetBookings = freshBookings.filter(
+      b => (b.status === 'seated' || b.status === 'arrived') && isBookingPast(b)
+    );
+
+    if (targetBookings.length === 0) {
+      btn.innerHTML = '<span class="material-symbols-outlined">check</span> No past bookings to update';
+      setTimeout(() => {
+        btn.innerHTML = '<span class="material-symbols-outlined">logout</span> Mark past as left';
+      }, 2000);
+      return;
+    }
+
+    // Populate and show confirmation modal
+    showMarkLeftModal(targetBookings);
+  } catch (error) {
+    btn.textContent = 'Error: ' + error.message;
+    setTimeout(() => {
+      btn.innerHTML = '<span class="material-symbols-outlined">logout</span> Mark past as left';
+      btn.disabled = false;
+    }, 3000);
+  }
+}
+
+function showMarkLeftModal(targetBookings) {
+  const modal = document.getElementById('mark-left-modal');
+  const list = document.getElementById('mark-left-modal-list');
+  list.innerHTML = '';
+
+  for (const b of targetBookings) {
+    const li = document.createElement('li');
+    const name = (b.guest && b.guest.name) || b.name || `Booking ${b._id.slice(-6)}`;
+    const time = b.dateTime
+      ? new Date(b.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    li.innerHTML = `<span>${escapeHtml(name)}${time ? ' &middot; ' + time : ''}</span>
+      <span class="modal-list-status">${b.status}</span>`;
+    list.appendChild(li);
+  }
+
+  // Store targets for confirm handler
+  modal.dataset.bookingIds = JSON.stringify(targetBookings.map(b => b._id));
+  modal.classList.remove('hidden');
+}
+
+async function confirmMarkAllAsLeft() {
+  const modal = document.getElementById('mark-left-modal');
+  const confirmBtn = document.getElementById('mark-left-confirm');
+  const ids = JSON.parse(modal.dataset.bookingIds || '[]');
+
+  if (ids.length === 0) { modal.classList.add('hidden'); return; }
+
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Updating...';
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+    const results = await Promise.allSettled(
+      ids.map(id => resosApi.updateBooking(id, { status: 'left' }))
+    );
+
+    const failed = results.filter(r => r.status === 'rejected').length;
+
+    // Update local state
+    for (const b of STATE.resosBookings) {
+      if (ids.includes(b._id)) b.status = 'left';
+    }
+    buildMatchedSet();
+    renderGuestList();
+
+    modal.classList.add('hidden');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Confirm';
+
+    const mainBtn = document.getElementById('mark-all-left-btn');
+    if (failed === 0) {
+      mainBtn.innerHTML = '<span class="material-symbols-outlined">check</span> All marked as left';
+    } else {
+      mainBtn.textContent = `${ids.length - failed} updated, ${failed} failed`;
+    }
+    setTimeout(() => {
+      mainBtn.innerHTML = '<span class="material-symbols-outlined">logout</span> Mark past as left';
+      mainBtn.disabled = false;
+    }, 2000);
+  } catch (error) {
+    confirmBtn.textContent = 'Error';
+    setTimeout(() => {
+      modal.classList.add('hidden');
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm';
+    }, 2000);
+  }
+}
+
+// ============================================================
 // INITIALIZATION
 // ============================================================
 async function init() {
@@ -1215,7 +1606,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Settings
-  document.getElementById('settings-btn').addEventListener('click', () => {
+  document.getElementById('settings-btn')?.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
   document.getElementById('open-settings-btn').addEventListener('click', () => {
@@ -1254,13 +1645,27 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('success-done-btn').addEventListener('click', () => {
     renderGuestList();
     showView('guest-list');
+    resetAutoRefreshTimer();
   });
+
+  // Mark all as left
+  document.getElementById('mark-all-left-btn').addEventListener('click', markAllAsLeft);
+  document.getElementById('mark-left-confirm').addEventListener('click', confirmMarkAllAsLeft);
+  document.getElementById('mark-left-cancel').addEventListener('click', () => {
+    document.getElementById('mark-left-modal').classList.add('hidden');
+    document.getElementById('mark-all-left-btn').disabled = false;
+  });
+
+  // Reset auto-refresh timer on any user interaction
+  document.addEventListener('click', resetAutoRefreshTimer);
+  document.addEventListener('keydown', resetAutoRefreshTimer);
 });
 
 // Listen for messages from background
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === 'settingsUpdated') {
     STATE.settings = message.settings;
+    resetAutoRefreshTimer();
     if (STATE.contextDate) loadData();
   } else if (message.action === 'urlChanged') {
     handleUrlChange(message.url);

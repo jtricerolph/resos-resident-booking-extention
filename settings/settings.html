@@ -57,6 +57,11 @@
           <input type="text" id="defaultTableArea" placeholder="e.g. Restaurant">
           <small>Table area name to auto-expand when showing available tables. Case-insensitive. Others collapsed.</small>
         </div>
+        <div class="form-group">
+          <label for="autoRefreshSeconds">Auto Refresh (seconds)</label>
+          <input type="number" id="autoRefreshSeconds" placeholder="0" min="0" max="3600">
+          <small>Automatically refresh guest list after this many seconds of inactivity. Set to 0 to disable.</small>
+        </div>
         <div class="button-group">
           <button id="testResos" class="button button-secondary">Test Resos Connection</button>
         </div>

@@ -1,6 +1,28 @@
 // Background Service Worker for Resos Resident Booking
 
 let settings = null;
+let sidepanelPort = null;
+
+// Track sidepanel open/close via port connection
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'sidepanel') {
+    sidepanelPort = port;
+    notifyContentScript('panelOpened');
+
+    port.onDisconnect.addListener(() => {
+      sidepanelPort = null;
+      notifyContentScript('panelClosed');
+    });
+  }
+});
+
+function notifyContentScript(action) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      chrome.tabs.sendMessage(tabs[0].id, { action }).catch(() => {});
+    }
+  });
+}
 
 async function loadSettings() {
   try {
@@ -115,6 +137,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.tabs.update(tabs[0].id, { url: message.url });
       }
     });
+  } else if (message.action === 'openSidePanel') {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      chrome.sidePanel.open({ tabId }).catch((err) => {
+        console.error('Failed to open sidepanel:', err);
+      });
+    }
+  } else if (message.action === 'getPanelState') {
+    sendResponse({ open: !!sidepanelPort });
+    return true;
   }
   return true;
 });

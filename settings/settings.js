@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   packageInventoryName: '',
   resosApiKey: '',
   defaultTableArea: '',
+  autoRefreshSeconds: 0,
   bookingRefFieldId: '',
   hotelGuestFieldId: '',
   dbbFieldId: ''
@@ -19,6 +20,7 @@ const elements = {
   packageInventoryName: document.getElementById('packageInventoryName'),
   resosApiKey: document.getElementById('resosApiKey'),
   defaultTableArea: document.getElementById('defaultTableArea'),
+  autoRefreshSeconds: document.getElementById('autoRefreshSeconds'),
   bookingRefFieldId: document.getElementById('bookingRefFieldId'),
   hotelGuestFieldId: document.getElementById('hotelGuestFieldId'),
   dbbFieldId: document.getElementById('dbbFieldId'),
@@ -41,6 +43,7 @@ async function loadSettings() {
     elements.packageInventoryName.value = settings.packageInventoryName || '';
     elements.resosApiKey.value = settings.resosApiKey || '';
     elements.defaultTableArea.value = settings.defaultTableArea || '';
+    elements.autoRefreshSeconds.value = settings.autoRefreshSeconds || 0;
 
     // Store field IDs to re-select after loading custom fields
     elements.bookingRefFieldId.dataset.savedValue = settings.bookingRefFieldId || '';
@@ -87,6 +90,7 @@ async function saveSettings() {
       packageInventoryName: elements.packageInventoryName.value.trim(),
       resosApiKey: elements.resosApiKey.value.trim(),
       defaultTableArea: elements.defaultTableArea.value.trim(),
+      autoRefreshSeconds: parseInt(elements.autoRefreshSeconds.value) || 0,
       bookingRefFieldId: elements.bookingRefFieldId.value,
       hotelGuestFieldId: elements.hotelGuestFieldId.value,
       dbbFieldId: elements.dbbFieldId.value
@@ -278,7 +282,7 @@ elements.testResos.addEventListener('click', testResosConnection);
 elements.loadCustomFields.addEventListener('click', () => loadCustomFieldOptions());
 
 // Enter key saves on text inputs
-[elements.newbookRegion, elements.newbookUsername, elements.newbookPassword, elements.newbookApiKey, elements.packageInventoryName, elements.resosApiKey, elements.defaultTableArea].forEach(input => {
+[elements.newbookRegion, elements.newbookUsername, elements.newbookPassword, elements.newbookApiKey, elements.packageInventoryName, elements.resosApiKey, elements.defaultTableArea, elements.autoRefreshSeconds].forEach(input => {
   input.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') saveSettings();
   });

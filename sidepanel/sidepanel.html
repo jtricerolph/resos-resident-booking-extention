@@ -12,17 +12,35 @@
 
     <!-- Header -->
     <header class="sidebar-header">
-      <h1>
-        <span class="material-symbols-outlined">hotel</span>
-        Hotel Bookings
-      </h1>
-      <div class="header-actions">
-        <button id="refresh-btn" class="icon-btn" title="Refresh">
-          <span class="material-symbols-outlined">refresh</span>
-        </button>
-        <button id="settings-btn" class="icon-btn" title="Settings">
-          <span class="material-symbols-outlined">settings</span>
-        </button>
+      <div class="stats-bar">
+        <div class="stat-item" title="Bookings with tables / total">
+          <span class="material-symbols-outlined">hotel</span>
+          <span id="stat-total">-</span>
+        </div>
+        <div class="stat-item" title="Arrivals with bookings / total">
+          <span class="material-symbols-outlined">flight_land</span>
+          <span id="stat-arrivals">-</span>
+        </div>
+        <div class="stat-item" title="Last nights with bookings / total">
+          <span class="material-symbols-outlined">flight_takeoff</span>
+          <span id="stat-departures">-</span>
+        </div>
+        <div class="stat-item stat-right" title="Total Resos bookings (covers)">
+          <span class="material-symbols-outlined">table_restaurant</span>
+          <span id="stat-resos-total">-</span>
+        </div>
+        <div class="stat-item" title="DBB bookings (covers)">
+          <span class="material-symbols-outlined">room_service</span>
+          <span id="stat-dbb">-</span>
+        </div>
+        <div class="stat-item" title="Non-resident bookings (covers)">
+          <span class="material-symbols-outlined">directions_walk</span>
+          <span id="stat-nonresident">-</span>
+        </div>
+        <div class="stat-item" title="Hotel guest bookings (covers)">
+          <span class="material-symbols-outlined">king_bed</span>
+          <span id="stat-hotelguest">-</span>
+        </div>
       </div>
     </header>
 
@@ -67,7 +85,7 @@
           <input type="checkbox" id="filter-matched" checked>
           <span>Hide with existing booking</span>
         </label>
-        <span id="guest-count" class="guest-count-badge">0</span>
+        <span id="hidden-count" class="hidden-count-badge hidden">0</span>
       </div>
 
       <div class="search-bar">
@@ -76,6 +94,17 @@
       </div>
 
       <div id="guest-list" class="guest-list"></div>
+
+      <div class="bottom-bar">
+        <button id="refresh-btn" class="btn-refresh">
+          <span class="material-symbols-outlined">refresh</span>
+          Refresh
+        </button>
+        <button id="mark-all-left-btn" class="btn-mark-left hidden">
+          <span class="material-symbols-outlined">logout</span>
+          Mark past as left
+        </button>
+      </div>
     </div>
 
     <!-- View: Confirm Booking -->
@@ -159,6 +188,19 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Mark Past as Left Confirmation Modal -->
+  <div id="mark-left-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Mark past as left?</h3>
+      <p class="modal-subtitle">The following bookings will be updated:</p>
+      <ul id="mark-left-modal-list" class="modal-list"></ul>
+      <div class="modal-actions">
+        <button id="mark-left-cancel" class="btn-modal-cancel">Cancel</button>
+        <button id="mark-left-confirm" class="btn-modal-confirm">Confirm</button>
+      </div>
+    </div>
   </div>
 
   <script src="sidepanel.js"></script>
