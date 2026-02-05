@@ -1,4 +1,4 @@
-// Background Service Worker for Resos Resident Booking
+// Background Service Worker for Resos NewBook Assistant
 
 let settings = null;
 let sidepanelPort = null;
@@ -101,11 +101,11 @@ async function handleTabUpdate(tabId, url) {
         // May fail if no user gesture yet — that's fine, toolbar click still works
       }
       await chrome.action.setBadgeText({ tabId, text: '' });
-      await chrome.action.setTitle({ tabId, title: 'Open Resident Booking Sidebar' });
+      await chrome.action.setTitle({ tabId, title: 'Open Resos NewBook Assistant' });
     } else {
       await chrome.sidePanel.setOptions({ tabId, enabled: false });
       await chrome.action.setBadgeText({ tabId, text: '' });
-      await chrome.action.setTitle({ tabId, title: 'Resos Resident Booking' });
+      await chrome.action.setTitle({ tabId, title: 'Resos NewBook Assistant' });
     }
   } catch (error) {
     console.error('Error handling tab update:', error);

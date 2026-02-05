@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Resos Resident Booking",
+  "name": "Resos NewBook Assistant",
   "version": "1.0.0",
-  "description": "Sidebar for hotel resident walk-in bookings on Resos hostess tablet",
+  "description": "Sidebar assistant for managing hotel resident walk-in restaurant bookings between NewBook and Resos",
 
   "permissions": [
     "sidePanel",

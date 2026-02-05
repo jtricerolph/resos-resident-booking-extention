@@ -1,4 +1,4 @@
-// Resos Resident Booking - Sidepanel Logic
+// Resos NewBook Assistant - Sidepanel Logic
 
 // ============================================================
 // STATE
