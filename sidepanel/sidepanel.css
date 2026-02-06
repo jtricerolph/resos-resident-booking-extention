@@ -1281,9 +1281,12 @@ body {
 }
 
 .match-fields-title {
-  font-size: 11px;
-  color: #6b6a79;
-  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9e9bae;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .match-field-row {
