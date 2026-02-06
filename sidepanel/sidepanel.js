@@ -598,8 +598,9 @@ function parseGroupExcludeField(value) {
     entry = entry.trim();
     if (!entry) continue;
     if (entry.toUpperCase().startsWith('NOT-#')) {
-      // Exclusion — not relevant for this extension, skip
-      continue;
+      // Exclusion: NOT-#12345 means this Resos booking is excluded from Newbook booking 12345
+      const id = entry.substring(5).trim();
+      if (id) result.excludes.push(id);
     } else if (entry.toUpperCase().startsWith('G#')) {
       const id = entry.substring(2).trim();
       if (id) result.groups.push(id);
@@ -689,6 +690,9 @@ function detectSuggestedMatches() {
     // Skip if already has a hotel booking ref
     if (resosHasHotelBookingRef(resosBooking)) continue;
 
+    // Get excludes from GROUP/EXCLUDE field for this Resos booking
+    const excludedNbIds = getResosExcludes(resosBooking);
+
     // Extract Resos guest details
     const resosSurname = extractSurnameFromResosBooking(resosBooking);
     const resosPhone = normalizePhone(resosBooking.guest?.phone || '');
@@ -726,6 +730,9 @@ function detectSuggestedMatches() {
       // Skip if this Newbook booking already has a confirmed Resos booking
       if (STATE.matchedBookingIds.has(nbId)) continue;
 
+      // Skip if this Resos booking has excluded this Newbook booking
+      if (excludedNbIds.has(nbId)) continue;
+
       if (!STATE.suggestedMatches.has(nbId)) STATE.suggestedMatches.set(nbId, []);
       STATE.suggestedMatches.get(nbId).push({
         resosBooking,
@@ -733,6 +740,22 @@ function detectSuggestedMatches() {
       });
     }
   }
+}
+
+function getResosExcludes(resosBooking) {
+  const excludes = new Set();
+  if (!resosBooking.customFields || !STATE.groupExcludeFieldId) return excludes;
+
+  for (const cf of resosBooking.customFields) {
+    const isGEField = cf._id === STATE.groupExcludeFieldId || cf.id === STATE.groupExcludeFieldId;
+    if (isGEField && cf.value) {
+      const parsed = parseGroupExcludeField(String(cf.value));
+      for (const id of parsed.excludes) {
+        excludes.add(id);
+      }
+    }
+  }
+  return excludes;
 }
 
 function resosHasHotelBookingRef(resosBooking) {
@@ -1793,12 +1816,19 @@ function showMatchView() {
         <div class="match-fields-title">Fields to update:</div>
         ${fieldRows}
       </div>
-      <button class="match-link-btn">
-        <span class="material-symbols-outlined">link</span>
-        Link Booking
-      </button>
+      <div class="match-card-actions">
+        <button class="match-exclude-btn">
+          <span class="material-symbols-outlined">close</span>
+          Exclude
+        </button>
+        <button class="match-link-btn">
+          <span class="material-symbols-outlined">link</span>
+          Link Booking
+        </button>
+      </div>
     `;
 
+    card.querySelector('.match-exclude-btn').addEventListener('click', () => excludeMatch(resosBooking));
     card.querySelector('.match-link-btn').addEventListener('click', () => linkToResosBooking(resosBooking));
     list.appendChild(card);
   }
@@ -1875,6 +1905,68 @@ async function linkToResosBooking(resosBooking) {
   } catch (error) {
     console.error('Error linking booking:', error);
     alert('Error linking booking: ' + error.message);
+  }
+}
+
+async function excludeMatch(resosBooking) {
+  const booking = STATE.selectedBooking;
+  if (!booking || !STATE.groupExcludeFieldId) {
+    alert('Cannot exclude: GROUP/EXCLUDE custom field not configured in Resos');
+    return;
+  }
+
+  const bookingIdStr = String(booking.booking_id);
+  const guestName = getGuestFullName(booking);
+
+  // IMPORTANT: Preserve existing custom fields and merge in new values
+  // Resos treats customFields as a JSON blob - full replacement, not merge
+  const existingFields = resosBooking.customFields || [];
+  const updatedFields = [...existingFields];
+
+  // Find existing GROUP/EXCLUDE field value
+  let existingGEValue = '';
+  const geFieldIdx = updatedFields.findIndex(
+    cf => cf._id === STATE.groupExcludeFieldId || cf.id === STATE.groupExcludeFieldId
+  );
+  if (geFieldIdx >= 0 && updatedFields[geFieldIdx].value) {
+    existingGEValue = String(updatedFields[geFieldIdx].value).trim();
+  }
+
+  // Append NOT-#bookingId to the field (preserving existing data)
+  const excludeEntry = `NOT-#${bookingIdStr}`;
+  const newGEValue = existingGEValue ? `${existingGEValue}, ${excludeEntry}` : excludeEntry;
+
+  // Update or add the GROUP/EXCLUDE field
+  if (geFieldIdx >= 0) {
+    updatedFields[geFieldIdx] = { ...updatedFields[geFieldIdx], value: newGEValue };
+  } else {
+    updatedFields.push({ _id: STATE.groupExcludeFieldId, value: newGEValue });
+  }
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+    await resosApi.updateBooking(resosBooking._id, { customFields: updatedFields });
+
+    // Remove this match from suggested matches for this Newbook booking
+    const matches = STATE.suggestedMatches.get(bookingIdStr) || [];
+    const filteredMatches = matches.filter(m => m.resosBooking._id !== resosBooking._id);
+    if (filteredMatches.length > 0) {
+      STATE.suggestedMatches.set(bookingIdStr, filteredMatches);
+    } else {
+      STATE.suggestedMatches.delete(bookingIdStr);
+    }
+
+    // Refresh the match view or go back to confirm if no more matches
+    if (STATE.suggestedMatches.has(bookingIdStr)) {
+      showMatchView(); // Re-render with remaining matches
+    } else {
+      // No more matches - go back to confirm view and hide the link button
+      document.getElementById('confirm-link-btn').classList.add('hidden');
+      showView('confirm');
+    }
+  } catch (error) {
+    console.error('Error excluding match:', error);
+    alert('Error excluding match: ' + error.message);
   }
 }
 

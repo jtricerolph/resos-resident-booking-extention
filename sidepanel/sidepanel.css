@@ -1385,13 +1385,43 @@ body {
   font-weight: 500;
 }
 
+.match-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.match-exclude-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 3;
+  padding: 10px 12px;
+  background-color: #4a4760;
+  border: none;
+  border-radius: 6px;
+  color: #e2e0ea;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.match-exclude-btn:hover {
+  background-color: #5a577a;
+}
+
+.match-exclude-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
 .match-link-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
-  margin-top: 12px;
+  flex: 7;
   padding: 10px 16px;
   background-color: #f59e0b;
   border: none;
