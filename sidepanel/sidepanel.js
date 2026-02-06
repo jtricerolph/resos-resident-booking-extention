@@ -1753,6 +1753,13 @@ function showMatchView() {
     if (STATE.dbbFieldId && STATE.dbbYesChoiceId && isPackage) {
       fieldsToUpdate.push({ label: 'DBB', oldVal: '-', newVal: 'Yes' });
     }
+    // Show phone/email if missing in Resos but available in Newbook
+    if (!resosPhone && nbPhone) {
+      fieldsToUpdate.push({ label: 'Phone', oldVal: '-', newVal: formatPhoneForResos(nbPhone) });
+    }
+    if (!resosEmail && nbEmail) {
+      fieldsToUpdate.push({ label: 'Email', oldVal: '-', newVal: nbEmail });
+    }
 
     const fieldRows = fieldsToUpdate.map(f => `
       <div class="match-field-row">
@@ -1829,9 +1836,27 @@ async function linkToResosBooking(resosBooking) {
     setCustomField(STATE.dbbFieldId, STATE.dbbYesChoiceId);
   }
 
+  // Build update payload starting with custom fields
+  const updatePayload = { customFields: updatedFields };
+
+  // Add phone/email from Newbook if missing in Resos
+  const resosPhone = (resosBooking.guest && resosBooking.guest.phone) || '';
+  const resosEmail = (resosBooking.guest && resosBooking.guest.email) || '';
+  const nbPhone = getGuestContact(booking, 'mobile') || getGuestContact(booking, 'phone') || '';
+  const nbEmail = getGuestContact(booking, 'email') || '';
+
+  if (!resosPhone && nbPhone) {
+    updatePayload.guest = updatePayload.guest || {};
+    updatePayload.guest.phone = formatPhoneForResos(nbPhone);
+  }
+  if (!resosEmail && nbEmail) {
+    updatePayload.guest = updatePayload.guest || {};
+    updatePayload.guest.email = nbEmail;
+  }
+
   try {
     const resosApi = new ResosAPI(STATE.settings);
-    await resosApi.updateBooking(resosBooking._id, { customFields: updatedFields });
+    await resosApi.updateBooking(resosBooking._id, updatePayload);
 
     // Update local state
     STATE.matchedBookingIds.add(bookingIdStr);
