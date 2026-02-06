@@ -93,12 +93,25 @@
         <input type="text" id="guest-search" placeholder="Search guests..." />
       </div>
 
+      <!-- Orphan Bookings Warning -->
+      <div id="orphan-warning" class="orphan-warning hidden">
+        <div class="orphan-header">
+          <span class="material-symbols-outlined">warning</span>
+          <strong>SUSPECTED ORPHAN RESOS BOOKINGS</strong>
+        </div>
+        <p class="orphan-subtitle">These bookings have a hotel booking# which cannot be found in the current day's booking list:</p>
+        <ul id="orphan-list" class="orphan-list"></ul>
+      </div>
+
       <div id="guest-list" class="guest-list"></div>
 
       <div class="bottom-bar">
         <button id="refresh-btn" class="btn-refresh">
           <span class="material-symbols-outlined">refresh</span>
-          Refresh
+          <span class="refresh-text">
+            Refresh
+            <span id="refresh-timer" class="refresh-timer"></span>
+          </span>
         </button>
         <button id="mark-all-left-btn" class="btn-mark-left hidden">
           <span class="material-symbols-outlined">logout</span>
@@ -185,6 +198,7 @@
         <h2>Booking Created!</h2>
         <p id="success-message"></p>
         <button id="success-done-btn" class="btn-primary">Done</button>
+        <span id="success-countdown" class="success-countdown"></span>
       </div>
     </div>
 

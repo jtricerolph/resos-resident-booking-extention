@@ -20,6 +20,7 @@ const STATE = {
   matchedBookingIds: new Set(),
   matchedBookingResosMap: new Map(), // newbookBookingId -> resosBookingId
   packageBookingIds: new Set(),
+  orphanResosBookings: [],  // Resos bookings with hotel ref not found in Newbook
   currentBaseUrl: null, // base URL for constructing Resos booking links
   selectedBooking: null,
   selectedTableId: null,
@@ -31,6 +32,11 @@ const STATE = {
 
 let tableLoadDebounce = null;
 let autoRefreshTimer = null;
+let lastCheckTime = null;
+let refreshTimerInterval = null;
+let lastDataHash = null;
+let successCountdownTimer = null;
+let successCountdownSeconds = 0;
 
 // Connect a port so background can track when the sidepanel opens/closes
 chrome.runtime.connect({ name: 'sidepanel' });
@@ -437,9 +443,14 @@ async function loadData() {
     resolveCustomFieldMappings();
     buildMatchedSet();
     buildPackageSet();
+    detectOrphanBookings();
     renderGuestList();
     showView('guest-list');
+
+    // Store hash for silent refresh comparison
+    lastDataHash = computeDataHash(newbookBookings, resosBookings);
     resetAutoRefreshTimer();
+    startRefreshTimerDisplay();
   } catch (error) {
     console.error('Error loading data:', error);
     document.getElementById('error-message').textContent = error.message;
@@ -599,6 +610,40 @@ function parseGroupExcludeField(value) {
 }
 
 // ============================================================
+// ORPHAN BOOKING DETECTION
+// ============================================================
+function detectOrphanBookings() {
+  STATE.orphanResosBookings = [];
+
+  if (!STATE.bookingRefFieldId) return;
+
+  const activeStatuses = new Set(['approved', 'arrived', 'seated', 'left']);
+  const newbookIds = new Set(STATE.newbookBookings.map(b => String(b.booking_id)));
+
+  for (const resosBooking of STATE.resosBookings) {
+    if (!activeStatuses.has(resosBooking.status)) continue;
+    if (!resosBooking.customFields) continue;
+
+    // Check if this booking has a hotel booking reference
+    for (const cf of resosBooking.customFields) {
+      const isBookingRefField = cf._id === STATE.bookingRefFieldId ||
+        cf.id === STATE.bookingRefFieldId;
+      if (isBookingRefField && cf.value) {
+        const refId = String(cf.value).trim();
+        // If this reference is not in the current Newbook bookings list, it's an orphan
+        if (refId && !newbookIds.has(refId)) {
+          STATE.orphanResosBookings.push({
+            resosBooking,
+            hotelBookingRef: refId
+          });
+        }
+        break;
+      }
+    }
+  }
+}
+
+// ============================================================
 // PACKAGE / DBB DETECTION
 // ============================================================
 function buildPackageSet() {
@@ -688,6 +733,51 @@ function renderGuestList() {
 
   updateStatsBar();
   updateMarkLeftButton();
+  renderOrphanWarning();
+}
+
+function renderOrphanWarning() {
+  const container = document.getElementById('orphan-warning');
+  const list = document.getElementById('orphan-list');
+
+  if (!STATE.orphanResosBookings || STATE.orphanResosBookings.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  list.innerHTML = '';
+
+  for (const { resosBooking, hotelBookingRef } of STATE.orphanResosBookings) {
+    const li = document.createElement('li');
+
+    // Time
+    const time = resosBooking.dateTime
+      ? new Date(resosBooking.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    // Guest name
+    const name = (resosBooking.guest && resosBooking.guest.name) ||
+      resosBooking.name ||
+      `Booking ${resosBooking._id.slice(-6)}`;
+
+    // Covers
+    const covers = resosBooking.people || 1;
+
+    li.innerHTML = `<span>${escapeHtml(time)} - ${escapeHtml(name)} (${covers}pax) [#${escapeHtml(hotelBookingRef)}]</span>`;
+
+    // Make clickable to open in Resos
+    if (STATE.currentBaseUrl) {
+      li.classList.add('clickable');
+      li.addEventListener('click', () => {
+        const bookingUrl = `${STATE.currentBaseUrl}/${resosBooking._id}`;
+        chrome.runtime.sendMessage({ action: 'navigateTab', url: bookingUrl });
+      });
+    }
+
+    list.appendChild(li);
+  }
+
+  container.classList.remove('hidden');
 }
 
 function getNewbookStatusClass(status) {
@@ -1261,6 +1351,8 @@ async function createBooking() {
     },
     status: 'approved',
     languageCode: 'en',
+    source: 'api',
+    note: 'Created by Resos NewBook Assistant',
     customFields: customFields
   };
 
@@ -1275,7 +1367,13 @@ async function createBooking() {
   }
 
   if (phone) bookingPayload.guest.phone = phone;
-  if (email) bookingPayload.guest.email = email;
+  if (email) {
+    bookingPayload.guest.email = email;
+    // Send notification email if setting enabled and email available
+    if (STATE.settings.sendGuestNotification) {
+      bookingPayload.guest.notificationEmail = true;
+    }
+  }
 
   const createBtn = document.getElementById('create-booking-btn');
   createBtn.disabled = true;
@@ -1289,6 +1387,7 @@ async function createBooking() {
     document.getElementById('success-message').textContent =
       `${guestName} - ${covers} covers at ${time} on ${formatDateForDisplay(dateStr)}`;
     showView('success');
+    startSuccessCountdown();
 
     STATE.matchedBookingIds.add(String(booking.booking_id));
   } catch (error) {
@@ -1348,9 +1447,122 @@ function resetAutoRefreshTimer() {
 
   autoRefreshTimer = setTimeout(() => {
     if (STATE.view === 'guest-list' && STATE.contextDate && STATE.settings) {
-      loadData();
+      silentRefresh();
     }
   }, seconds * 1000);
+}
+
+function startRefreshTimerDisplay() {
+  lastCheckTime = Date.now();
+  updateRefreshTimerDisplay();
+
+  // Clear any existing interval
+  if (refreshTimerInterval) clearInterval(refreshTimerInterval);
+
+  // Update every second
+  refreshTimerInterval = setInterval(updateRefreshTimerDisplay, 1000);
+}
+
+function updateRefreshTimerDisplay() {
+  const timerEl = document.getElementById('refresh-timer');
+  if (!timerEl || !lastCheckTime) {
+    if (timerEl) timerEl.textContent = '';
+    return;
+  }
+
+  const elapsed = Math.floor((Date.now() - lastCheckTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+
+  timerEl.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function computeDataHash(newbookBookings, resosBookings) {
+  // Create a simple hash from booking IDs and key fields
+  const nbIds = newbookBookings.map(b => `${b.booking_id}:${b.booking_status}`).sort().join(',');
+  const rsIds = resosBookings.map(b => `${b._id}:${b.status}:${b.people}`).sort().join(',');
+  return nbIds + '|' + rsIds;
+}
+
+// ============================================================
+// SUCCESS COUNTDOWN
+// ============================================================
+function startSuccessCountdown() {
+  clearSuccessCountdown();
+  successCountdownSeconds = 10;
+  updateSuccessCountdownDisplay();
+
+  successCountdownTimer = setInterval(() => {
+    successCountdownSeconds--;
+    updateSuccessCountdownDisplay();
+
+    if (successCountdownSeconds <= 0) {
+      clearSuccessCountdown();
+      triggerSuccessDone();
+    }
+  }, 1000);
+}
+
+function updateSuccessCountdownDisplay() {
+  const el = document.getElementById('success-countdown');
+  if (el) {
+    el.textContent = `Returning in ${successCountdownSeconds}s...`;
+  }
+}
+
+function clearSuccessCountdown() {
+  if (successCountdownTimer) {
+    clearInterval(successCountdownTimer);
+    successCountdownTimer = null;
+  }
+  const el = document.getElementById('success-countdown');
+  if (el) el.textContent = '';
+}
+
+function triggerSuccessDone() {
+  renderGuestList();
+  showView('guest-list');
+  resetAutoRefreshTimer();
+}
+
+async function silentRefresh() {
+  if (!STATE.settings || !STATE.contextDate) return;
+
+  try {
+    const newbookApi = new NewbookAPI(STATE.settings);
+    const resosApi = new ResosAPI(STATE.settings);
+
+    const [newbookBookings, resosBookings] = await Promise.all([
+      newbookApi.fetchStayingOnDate(STATE.contextDate),
+      resosApi.fetchBookingsForDate(STATE.contextDate)
+    ]);
+
+    // Update the check time
+    startRefreshTimerDisplay();
+
+    // Compare with previous data
+    const newHash = computeDataHash(newbookBookings, resosBookings);
+    if (newHash === lastDataHash) {
+      // No changes, just reset the auto-refresh timer
+      resetAutoRefreshTimer();
+      return;
+    }
+
+    // Data changed - update state and re-render
+    lastDataHash = newHash;
+    STATE.newbookBookings = newbookBookings;
+    STATE.resosBookings = resosBookings;
+
+    buildMatchedSet();
+    buildPackageSet();
+    detectOrphanBookings();
+    renderGuestList();
+    resetAutoRefreshTimer();
+  } catch (error) {
+    console.error('Silent refresh error:', error);
+    // Don't show error to user for silent refresh, just reset timer
+    resetAutoRefreshTimer();
+  }
 }
 
 // ============================================================
@@ -1477,7 +1689,12 @@ async function markAllAsLeft() {
     const freshBookings = await resosApi.fetchBookingsForDate(STATE.contextDate);
     STATE.resosBookings = freshBookings;
     buildMatchedSet();
+    detectOrphanBookings();
     renderGuestList();
+
+    // Update hash for silent refresh comparison
+    lastDataHash = computeDataHash(STATE.newbookBookings, freshBookings);
+    startRefreshTimerDisplay();
 
     const targetBookings = freshBookings.filter(
       b => (b.status === 'seated' || b.status === 'arrived') && isBookingPast(b)
@@ -1546,6 +1763,7 @@ async function confirmMarkAllAsLeft() {
       if (ids.includes(b._id)) b.status = 'left';
     }
     buildMatchedSet();
+    detectOrphanBookings();
     renderGuestList();
 
     modal.classList.add('hidden');
@@ -1643,9 +1861,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Success done
   document.getElementById('success-done-btn').addEventListener('click', () => {
-    renderGuestList();
-    showView('guest-list');
-    resetAutoRefreshTimer();
+    clearSuccessCountdown();
+    triggerSuccessDone();
   });
 
   // Mark all as left

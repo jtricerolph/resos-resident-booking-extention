@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   resosApiKey: '',
   defaultTableArea: '',
   autoRefreshSeconds: 0,
+  sendGuestNotification: false,
   bookingRefFieldId: '',
   hotelGuestFieldId: '',
   dbbFieldId: ''
@@ -21,6 +22,7 @@ const elements = {
   resosApiKey: document.getElementById('resosApiKey'),
   defaultTableArea: document.getElementById('defaultTableArea'),
   autoRefreshSeconds: document.getElementById('autoRefreshSeconds'),
+  sendGuestNotification: document.getElementById('sendGuestNotification'),
   bookingRefFieldId: document.getElementById('bookingRefFieldId'),
   hotelGuestFieldId: document.getElementById('hotelGuestFieldId'),
   dbbFieldId: document.getElementById('dbbFieldId'),
@@ -44,6 +46,7 @@ async function loadSettings() {
     elements.resosApiKey.value = settings.resosApiKey || '';
     elements.defaultTableArea.value = settings.defaultTableArea || '';
     elements.autoRefreshSeconds.value = settings.autoRefreshSeconds || 0;
+    elements.sendGuestNotification.checked = settings.sendGuestNotification || false;
 
     // Store field IDs to re-select after loading custom fields
     elements.bookingRefFieldId.dataset.savedValue = settings.bookingRefFieldId || '';
@@ -91,6 +94,7 @@ async function saveSettings() {
       resosApiKey: elements.resosApiKey.value.trim(),
       defaultTableArea: elements.defaultTableArea.value.trim(),
       autoRefreshSeconds: parseInt(elements.autoRefreshSeconds.value) || 0,
+      sendGuestNotification: elements.sendGuestNotification.checked,
       bookingRefFieldId: elements.bookingRefFieldId.value,
       hotelGuestFieldId: elements.hotelGuestFieldId.value,
       dbbFieldId: elements.dbbFieldId.value

@@ -159,6 +159,12 @@ body {
   font-size: 14px;
 }
 
+.success-countdown {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #6b6a79;
+}
+
 .loading-state p,
 .empty-state p,
 .error-state p {
@@ -783,7 +789,8 @@ body {
 }
 
 #view-guest-list .filter-bar,
-#view-guest-list .search-bar {
+#view-guest-list .search-bar,
+#view-guest-list .orphan-warning {
   flex-shrink: 0;
 }
 
@@ -826,6 +833,19 @@ body {
 .btn-refresh:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.refresh-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.refresh-timer {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 .btn-mark-left {
@@ -963,4 +983,62 @@ body {
 .btn-modal-confirm:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Orphan Bookings Warning */
+.orphan-warning {
+  margin: 8px;
+  padding: 12px;
+  background-color: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.orphan-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: #fbbf24;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+
+.orphan-header .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.orphan-subtitle {
+  font-size: 11px;
+  color: #9e9bae;
+  margin-bottom: 8px;
+}
+
+.orphan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.orphan-list li {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #fcd34d;
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.orphan-list li:last-child {
+  margin-bottom: 0;
+}
+
+.orphan-list li.clickable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.orphan-list li.clickable:hover {
+  background-color: rgba(245, 158, 11, 0.2);
 }
