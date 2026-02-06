@@ -445,13 +445,23 @@ body {
 }
 
 .guest-card-package-alert {
-  border-color: #b45309;
-  background-color: rgba(245, 158, 11, 0.08);
+  border-color: #dc2626;
+  background-color: rgba(239, 68, 68, 0.1);
 }
 
 .guest-card-package-alert:hover {
+  border-color: #ef4444;
+  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.2);
+}
+
+.guest-card-suggested-match {
   border-color: #d97706;
-  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.15);
+  background-color: rgba(251, 191, 36, 0.1);
+}
+
+.guest-card-suggested-match:hover {
+  border-color: #f59e0b;
+  box-shadow: 0 1px 4px rgba(251, 191, 36, 0.2);
 }
 
 .guest-card-arrow {
@@ -490,6 +500,13 @@ body {
   background-color: #2a2839;
   border: 2px solid #7c6fbd;
   border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.confirm-card-content {
+  flex: 1;
 }
 
 .confirm-card h2 {
@@ -1041,4 +1058,86 @@ body {
 
 .orphan-list li.clickable:hover {
   background-color: rgba(245, 158, 11, 0.2);
+}
+
+/* Confirm Link Button */
+.confirm-link-btn {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f59e0b;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.confirm-link-btn:hover {
+  background-color: #d97706;
+}
+
+.confirm-link-btn .material-symbols-outlined {
+  font-size: 24px;
+}
+
+/* Match View */
+.match-header {
+  padding: 16px;
+}
+
+.match-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e2e0ea;
+  margin-bottom: 4px;
+}
+
+.match-subtitle {
+  font-size: 13px;
+  color: #9e9bae;
+}
+
+.match-list {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.match-card {
+  background-color: #2a2839;
+  border: 1px solid #3d3b4d;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.match-card:hover {
+  border-color: #f59e0b;
+  background-color: #33313f;
+}
+
+.match-card-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e2e0ea;
+  margin-bottom: 4px;
+}
+
+.match-card-details {
+  font-size: 12px;
+  color: #9e9bae;
+  display: flex;
+  gap: 12px;
+}
+
+.match-card-reasons {
+  font-size: 11px;
+  color: #f59e0b;
+  margin-top: 6px;
 }

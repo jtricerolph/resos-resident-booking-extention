@@ -21,6 +21,7 @@ const STATE = {
   matchedBookingResosMap: new Map(), // newbookBookingId -> resosBookingId
   packageBookingIds: new Set(),
   orphanResosBookings: [],  // Resos bookings with hotel ref not found in Newbook
+  suggestedMatches: new Map(), // newbookBookingId → [{ resosBooking, matchReasons[] }]
   currentBaseUrl: null, // base URL for constructing Resos booking links
   selectedBooking: null,
   selectedTableId: null,
@@ -444,6 +445,7 @@ async function loadData() {
     buildMatchedSet();
     buildPackageSet();
     detectOrphanBookings();
+    detectSuggestedMatches();
     renderGuestList();
     showView('guest-list');
 
@@ -644,6 +646,120 @@ function detectOrphanBookings() {
 }
 
 // ============================================================
+// SUGGESTED MATCH DETECTION
+// ============================================================
+function detectSuggestedMatches() {
+  STATE.suggestedMatches.clear();
+
+  const activeStatuses = new Set(['approved', 'arrived', 'seated']);
+
+  // Build lookup maps for Newbook guests
+  const surnameToNbIds = new Map();   // surname → [nbId, ...]
+  const phoneToNbIds = new Map();      // normalizedPhone → [nbId, ...]
+  const emailToNbIds = new Map();      // lowercaseEmail → [nbId, ...]
+
+  for (const nb of STATE.newbookBookings) {
+    const nbId = String(nb.booking_id);
+
+    // Surname lookup
+    const surname = getGuestSurname(nb);
+    if (surname) {
+      if (!surnameToNbIds.has(surname)) surnameToNbIds.set(surname, []);
+      surnameToNbIds.get(surname).push(nbId);
+    }
+
+    // Phone lookup
+    const phone = normalizePhone(getGuestContact(nb, 'mobile') || getGuestContact(nb, 'phone'));
+    if (phone) {
+      if (!phoneToNbIds.has(phone)) phoneToNbIds.set(phone, []);
+      phoneToNbIds.get(phone).push(nbId);
+    }
+
+    // Email lookup
+    const email = (getGuestContact(nb, 'email') || '').toLowerCase().trim();
+    if (email) {
+      if (!emailToNbIds.has(email)) emailToNbIds.set(email, []);
+      emailToNbIds.get(email).push(nbId);
+    }
+  }
+
+  for (const resosBooking of STATE.resosBookings) {
+    if (!activeStatuses.has(resosBooking.status)) continue;
+
+    // Skip if already has a hotel booking ref
+    if (resosHasHotelBookingRef(resosBooking)) continue;
+
+    // Extract Resos guest details
+    const resosSurname = extractSurnameFromResosBooking(resosBooking);
+    const resosPhone = normalizePhone(resosBooking.guest?.phone || '');
+    const resosEmail = (resosBooking.guest?.email || '').toLowerCase().trim();
+
+    // Find matches (ANY criteria)
+    const matchedNbIds = new Map(); // nbId → Set of match reasons
+
+    // Surname matches
+    if (resosSurname) {
+      for (const nbId of (surnameToNbIds.get(resosSurname) || [])) {
+        if (!matchedNbIds.has(nbId)) matchedNbIds.set(nbId, new Set());
+        matchedNbIds.get(nbId).add('surname');
+      }
+    }
+
+    // Phone matches
+    if (resosPhone) {
+      for (const nbId of (phoneToNbIds.get(resosPhone) || [])) {
+        if (!matchedNbIds.has(nbId)) matchedNbIds.set(nbId, new Set());
+        matchedNbIds.get(nbId).add('phone');
+      }
+    }
+
+    // Email matches
+    if (resosEmail) {
+      for (const nbId of (emailToNbIds.get(resosEmail) || [])) {
+        if (!matchedNbIds.has(nbId)) matchedNbIds.set(nbId, new Set());
+        matchedNbIds.get(nbId).add('email');
+      }
+    }
+
+    // Add to suggested matches
+    for (const [nbId, reasons] of matchedNbIds) {
+      // Skip if this Newbook booking already has a confirmed Resos booking
+      if (STATE.matchedBookingIds.has(nbId)) continue;
+
+      if (!STATE.suggestedMatches.has(nbId)) STATE.suggestedMatches.set(nbId, []);
+      STATE.suggestedMatches.get(nbId).push({
+        resosBooking,
+        matchReasons: Array.from(reasons)
+      });
+    }
+  }
+}
+
+function resosHasHotelBookingRef(resosBooking) {
+  if (!resosBooking.customFields || !STATE.bookingRefFieldId) return false;
+  for (const cf of resosBooking.customFields) {
+    const isBookingRefField = cf._id === STATE.bookingRefFieldId || cf.id === STATE.bookingRefFieldId;
+    if (isBookingRefField && cf.value) return true;
+  }
+  return false;
+}
+
+function extractSurnameFromResosBooking(resosBooking) {
+  const fullName = (resosBooking.guest && resosBooking.guest.name) || resosBooking.name || '';
+  if (!fullName) return '';
+  // Take last word as surname
+  const parts = fullName.trim().split(/\s+/);
+  return parts.length > 0 ? parts[parts.length - 1].toLowerCase() : '';
+}
+
+function normalizePhone(phone) {
+  if (!phone) return '';
+  // Strip all non-digit characters, keep last 9 digits for comparison
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 9 ? digits.slice(-9) : digits;
+}
+
+// ============================================================
 // PACKAGE / DBB DETECTION
 // ============================================================
 function buildPackageSet() {
@@ -818,10 +934,16 @@ function createGuestCard(booking) {
   const bookingIdStr = String(booking.booking_id);
   const isMatched = STATE.matchedBookingIds.has(bookingIdStr);
   const isPackage = STATE.packageBookingIds.has(bookingIdStr);
+  const hasSuggestedMatch = STATE.suggestedMatches.has(bookingIdStr);
 
   // Highlight package guests without a Resos booking
   if (isPackage && !isMatched) {
     card.classList.add('guest-card-package-alert');
+  }
+
+  // Highlight guests with suggested matches (amber, different shade)
+  if (hasSuggestedMatch && !isMatched) {
+    card.classList.add('guest-card-suggested-match');
   }
 
   const resosBookingId = STATE.matchedBookingResosMap.get(bookingIdStr);
@@ -891,6 +1013,15 @@ function selectGuest(booking) {
   document.getElementById('timeslots-section').classList.add('hidden');
   document.getElementById('create-booking-btn').disabled = true;
   hideFeedback();
+
+  // Show link button if there are suggested matches
+  const linkBtn = document.getElementById('confirm-link-btn');
+  const bookingIdStr = String(booking.booking_id);
+  if (STATE.suggestedMatches.has(bookingIdStr)) {
+    linkBtn.classList.remove('hidden');
+  } else {
+    linkBtn.classList.add('hidden');
+  }
 
   // Unified: both today and future use covers + time slot selection
   document.getElementById('confirm-covers').value = totalGuests || 2;
@@ -1556,12 +1687,109 @@ async function silentRefresh() {
     buildMatchedSet();
     buildPackageSet();
     detectOrphanBookings();
+    detectSuggestedMatches();
     renderGuestList();
     resetAutoRefreshTimer();
   } catch (error) {
     console.error('Silent refresh error:', error);
     // Don't show error to user for silent refresh, just reset timer
     resetAutoRefreshTimer();
+  }
+}
+
+// ============================================================
+// SUGGESTED MATCH LINKING
+// ============================================================
+function showMatchView() {
+  const booking = STATE.selectedBooking;
+  const bookingIdStr = String(booking.booking_id);
+  const matches = STATE.suggestedMatches.get(bookingIdStr) || [];
+
+  document.getElementById('match-guest-name').textContent = getGuestFullName(booking);
+
+  const list = document.getElementById('match-list');
+  list.innerHTML = '';
+
+  for (const { resosBooking, matchReasons } of matches) {
+    const card = document.createElement('div');
+    card.className = 'match-card';
+
+    const name = (resosBooking.guest && resosBooking.guest.name) || resosBooking.name || 'Unknown';
+    const time = resosBooking.dateTime
+      ? new Date(resosBooking.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    const covers = resosBooking.people || 1;
+    const status = resosBooking.status || '';
+    const reasonsText = matchReasons.join(', ');
+
+    card.innerHTML = `
+      <div class="match-card-name">${escapeHtml(name)}</div>
+      <div class="match-card-details">
+        <span>${time}</span>
+        <span>${covers} covers</span>
+        <span>${status}</span>
+      </div>
+      <div class="match-card-reasons">Matched by: ${escapeHtml(reasonsText)}</div>
+    `;
+
+    card.addEventListener('click', () => linkToResosBooking(resosBooking));
+    list.appendChild(card);
+  }
+
+  showView('match');
+}
+
+async function linkToResosBooking(resosBooking) {
+  const booking = STATE.selectedBooking;
+  if (!booking || !STATE.bookingRefFieldId) return;
+
+  const bookingIdStr = String(booking.booking_id);
+
+  // IMPORTANT: Preserve existing custom fields and merge in new values
+  // Resos treats customFields as a JSON blob - full replacement, not merge
+  const existingFields = resosBooking.customFields || [];
+  const updatedFields = [...existingFields];
+
+  // Helper to update or add a custom field
+  function setCustomField(fieldId, value) {
+    const idx = updatedFields.findIndex(cf => cf._id === fieldId || cf.id === fieldId);
+    if (idx >= 0) {
+      updatedFields[idx] = { ...updatedFields[idx], value };
+    } else {
+      updatedFields.push({ _id: fieldId, value });
+    }
+  }
+
+  // Set booking ref
+  setCustomField(STATE.bookingRefFieldId, bookingIdStr);
+
+  // Set hotel guest flag if available
+  if (STATE.hotelGuestFieldId && STATE.hotelGuestYesChoiceId) {
+    setCustomField(STATE.hotelGuestFieldId, STATE.hotelGuestYesChoiceId);
+  }
+
+  // Set DBB flag if this is a package booking
+  if (STATE.dbbFieldId && STATE.dbbYesChoiceId && STATE.packageBookingIds.has(bookingIdStr)) {
+    setCustomField(STATE.dbbFieldId, STATE.dbbYesChoiceId);
+  }
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+    await resosApi.updateBooking(resosBooking._id, { customFields: updatedFields });
+
+    // Update local state
+    STATE.matchedBookingIds.add(bookingIdStr);
+    STATE.matchedBookingResosMap.set(bookingIdStr, resosBooking._id);
+    STATE.suggestedMatches.delete(bookingIdStr);
+
+    // Show success and return to list
+    document.getElementById('success-message').textContent =
+      `Linked ${getGuestFullName(booking)} to existing Resos booking`;
+    showView('success');
+    startSuccessCountdown();
+  } catch (error) {
+    console.error('Error linking booking:', error);
+    alert('Error linking booking: ' + error.message);
   }
 }
 
@@ -1690,6 +1918,7 @@ async function markAllAsLeft() {
     STATE.resosBookings = freshBookings;
     buildMatchedSet();
     detectOrphanBookings();
+    detectSuggestedMatches();
     renderGuestList();
 
     // Update hash for silent refresh comparison
@@ -1764,6 +1993,7 @@ async function confirmMarkAllAsLeft() {
     }
     buildMatchedSet();
     detectOrphanBookings();
+    detectSuggestedMatches();
     renderGuestList();
 
     modal.classList.add('hidden');
@@ -1864,6 +2094,10 @@ document.addEventListener('DOMContentLoaded', () => {
     clearSuccessCountdown();
     triggerSuccessDone();
   });
+
+  // Suggested match linking
+  document.getElementById('confirm-link-btn').addEventListener('click', showMatchView);
+  document.getElementById('back-to-confirm-btn').addEventListener('click', () => showView('confirm'));
 
   // Mark all as left
   document.getElementById('mark-all-left-btn').addEventListener('click', markAllAsLeft);

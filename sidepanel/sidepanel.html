@@ -128,21 +128,26 @@
       </button>
 
       <div class="confirm-card">
-        <h2 id="confirm-guest-name"></h2>
-        <div class="confirm-details">
-          <div class="confirm-detail">
-            <span class="material-symbols-outlined">tag</span>
-            <span>Booking #<strong id="confirm-booking-id"></strong></span>
-          </div>
-          <div class="confirm-detail">
-            <span class="material-symbols-outlined">meeting_room</span>
-            <span>Room <strong id="confirm-room"></strong></span>
-          </div>
-          <div class="confirm-detail">
-            <span class="material-symbols-outlined">calendar_today</span>
-            <span id="confirm-date"></span>
+        <div class="confirm-card-content">
+          <h2 id="confirm-guest-name"></h2>
+          <div class="confirm-details">
+            <div class="confirm-detail">
+              <span class="material-symbols-outlined">tag</span>
+              <span>Booking #<strong id="confirm-booking-id"></strong></span>
+            </div>
+            <div class="confirm-detail">
+              <span class="material-symbols-outlined">meeting_room</span>
+              <span>Room <strong id="confirm-room"></strong></span>
+            </div>
+            <div class="confirm-detail">
+              <span class="material-symbols-outlined">calendar_today</span>
+              <span id="confirm-date"></span>
+            </div>
           </div>
         </div>
+        <button id="confirm-link-btn" class="confirm-link-btn hidden" title="Link to existing Resos booking">
+          <span class="material-symbols-outlined">link</span>
+        </button>
       </div>
 
       <!-- Covers -->
@@ -189,6 +194,21 @@
       </button>
 
       <div id="create-feedback" class="feedback hidden"></div>
+    </div>
+
+    <!-- View: Match Selection -->
+    <div id="view-match" class="view hidden">
+      <button id="back-to-confirm-btn" class="back-btn">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Back to create booking
+      </button>
+
+      <div class="match-header">
+        <h2>Link to Existing Booking</h2>
+        <p class="match-subtitle">Select a Resos booking to link with <strong id="match-guest-name"></strong></p>
+      </div>
+
+      <div id="match-list" class="match-list"></div>
     </div>
 
     <!-- View: Success -->
