@@ -825,6 +825,44 @@ body {
   overflow-y: auto;
 }
 
+/* Confirm view - flex column so bottom bar pins */
+#view-confirm {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+#view-confirm .back-btn,
+#view-confirm .confirm-card,
+#view-confirm .form-section,
+#view-confirm .tables-section,
+#view-confirm .feedback {
+  flex-shrink: 0;
+}
+
+#view-confirm .tables-section {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Match view - flex column so bottom bar pins */
+#view-match {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+#view-match .back-btn,
+#view-match .match-header,
+#view-match .match-source-card {
+  flex-shrink: 0;
+}
+
+#view-match .match-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
 /* Bottom Bar */
 .bottom-bar {
   display: flex;
@@ -872,6 +910,35 @@ body {
   font-size: 10px;
   font-weight: 400;
   opacity: 0.7;
+}
+
+.btn-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  padding: 10px 20px;
+  background-color: #4a4760;
+  color: #e2e0ea;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-home:hover {
+  background-color: #5a577a;
+}
+
+.btn-home .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.btn-create {
+  flex: 2;
 }
 
 .btn-mark-left {

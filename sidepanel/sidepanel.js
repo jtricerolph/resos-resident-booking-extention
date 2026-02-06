@@ -2184,6 +2184,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('confirm-link-btn').addEventListener('click', showMatchView);
   document.getElementById('back-to-confirm-btn').addEventListener('click', () => showView('confirm'));
 
+  // Home buttons on secondary views
+  document.getElementById('confirm-home-btn').addEventListener('click', () => showView('guest-list'));
+  document.getElementById('match-home-btn').addEventListener('click', () => showView('guest-list'));
+
   // Mark all as left
   document.getElementById('mark-all-left-btn').addEventListener('click', markAllAsLeft);
   document.getElementById('mark-left-confirm').addEventListener('click', confirmMarkAllAsLeft);
