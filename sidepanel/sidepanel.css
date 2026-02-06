@@ -863,6 +863,24 @@ body {
   overflow-y: auto;
 }
 
+/* Group link view - flex column so bottom bar pins */
+#view-group-link {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+#view-group-link .back-btn,
+#view-group-link .match-header,
+#view-group-link .match-source-card {
+  flex-shrink: 0;
+}
+
+#view-group-link .match-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
 /* Bottom Bar */
 .bottom-bar {
   display: flex;
@@ -1160,6 +1178,39 @@ body {
   font-size: 24px;
 }
 
+/* Confirm Group Button (blue) */
+.confirm-group-btn {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #3b82f6;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.confirm-group-btn:hover {
+  background-color: #2563eb;
+}
+
+.confirm-group-btn .material-symbols-outlined {
+  font-size: 24px;
+}
+
+/* Group Source Card styling (blue border instead of purple) */
+.group-source-card {
+  border-color: #3b82f6;
+}
+
+.group-source-card .match-source-label {
+  color: #3b82f6;
+}
+
 /* Match View */
 .match-header {
   padding: 16px 16px 8px;
@@ -1438,5 +1489,74 @@ body {
 }
 
 .match-link-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* Group link card styling (blue theme) */
+.group-link-card {
+  background-color: #2a2839;
+  border: 1px solid #3d3b4d;
+  border-radius: 8px;
+  padding: 12px;
+  transition: all 0.2s;
+}
+
+.group-link-card:hover {
+  border-color: #3b82f6;
+}
+
+.group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.group-hotel-icon {
+  font-size: 18px;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.group-link-card .match-card-label {
+  color: #3b82f6;
+}
+
+.group-link-card .match-card-reasons {
+  display: flex;
+  gap: 6px;
+}
+
+.group-link-badge {
+  padding: 2px 8px;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.group-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  padding: 10px 16px;
+  background-color: #3b82f6;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.group-add-btn:hover {
+  background-color: #2563eb;
+}
+
+.group-add-btn .material-symbols-outlined {
   font-size: 18px;
 }

@@ -846,6 +846,11 @@ function renderGuestList() {
     hiddenCountEl.classList.add('hidden');
   }
 
+  // Always update stats/warnings regardless of filtered list
+  updateStatsBar();
+  updateMarkLeftButton();
+  renderOrphanWarning();
+
   if (bookings.length === 0) {
     const dateLabel = STATE.isToday ? 'tonight' : 'on ' + formatDateForDisplay(STATE.contextDate);
     container.innerHTML = `
@@ -869,10 +874,6 @@ function renderGuestList() {
   for (const booking of bookings) {
     container.appendChild(createGuestCard(booking));
   }
-
-  updateStatsBar();
-  updateMarkLeftButton();
-  renderOrphanWarning();
 }
 
 function renderOrphanWarning() {
@@ -1540,6 +1541,7 @@ async function createBooking() {
     const resosApi = new ResosAPI(STATE.settings);
     await resosApi.createBooking(bookingPayload);
 
+    document.getElementById('success-title').textContent = 'Booking Created!';
     document.getElementById('success-message').textContent =
       `${guestName} - ${covers} covers at ${time} on ${formatDateForDisplay(dateStr)}`;
     showView('success');
@@ -1679,6 +1681,26 @@ function triggerSuccessDone() {
   renderGuestList();
   showView('guest-list');
   resetAutoRefreshTimer();
+}
+
+async function refreshResosData() {
+  if (!STATE.settings || !STATE.contextDate) return;
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+    const resosBookings = await resosApi.fetchBookingsForDate(STATE.contextDate);
+
+    STATE.resosBookings = resosBookings;
+    buildMatchedSet();
+    detectOrphanBookings();
+    detectSuggestedMatches();
+
+    // Update hash for silent refresh comparison
+    lastDataHash = computeDataHash(STATE.newbookBookings, resosBookings);
+    startRefreshTimerDisplay();
+  } catch (error) {
+    console.error('Error refreshing Resos data:', error);
+  }
 }
 
 async function silentRefresh() {
@@ -1848,12 +1870,19 @@ async function linkToResosBooking(resosBooking) {
   const updatedFields = [...existingFields];
 
   // Helper to update or add a custom field
-  function setCustomField(fieldId, value) {
+  function setCustomField(fieldId, value, multipleChoiceValueName = null) {
     const idx = updatedFields.findIndex(cf => cf._id === fieldId || cf.id === fieldId);
     if (idx >= 0) {
-      updatedFields[idx] = { ...updatedFields[idx], value };
+      const updated = { ...updatedFields[idx], value };
+      if (multipleChoiceValueName) updated.multipleChoiceValueName = multipleChoiceValueName;
+      updatedFields[idx] = updated;
     } else {
-      updatedFields.push({ _id: fieldId, value });
+      // Look up field definition to get the name
+      const fieldDef = STATE.customFields.find(f => f._id === fieldId);
+      const fieldName = fieldDef ? fieldDef.name : '';
+      const newField = { _id: fieldId, name: fieldName, value };
+      if (multipleChoiceValueName) newField.multipleChoiceValueName = multipleChoiceValueName;
+      updatedFields.push(newField);
     }
   }
 
@@ -1862,12 +1891,12 @@ async function linkToResosBooking(resosBooking) {
 
   // Set hotel guest flag if available
   if (STATE.hotelGuestFieldId && STATE.hotelGuestYesChoiceId) {
-    setCustomField(STATE.hotelGuestFieldId, STATE.hotelGuestYesChoiceId);
+    setCustomField(STATE.hotelGuestFieldId, STATE.hotelGuestYesChoiceId, 'Yes');
   }
 
   // Set DBB flag if this is a package booking
   if (STATE.dbbFieldId && STATE.dbbYesChoiceId && STATE.packageBookingIds.has(bookingIdStr)) {
-    setCustomField(STATE.dbbFieldId, STATE.dbbYesChoiceId);
+    setCustomField(STATE.dbbFieldId, STATE.dbbYesChoiceId, 'Yes');
   }
 
   // Build update payload starting with custom fields
@@ -1892,12 +1921,11 @@ async function linkToResosBooking(resosBooking) {
     const resosApi = new ResosAPI(STATE.settings);
     await resosApi.updateBooking(resosBooking._id, updatePayload);
 
-    // Update local state
-    STATE.matchedBookingIds.add(bookingIdStr);
-    STATE.matchedBookingResosMap.set(bookingIdStr, resosBooking._id);
-    STATE.suggestedMatches.delete(bookingIdStr);
+    // Refresh Resos data to get updated booking state
+    await refreshResosData();
 
     // Show success and return to list
+    document.getElementById('success-title').textContent = 'Booking Linked!';
     document.getElementById('success-message').textContent =
       `Linked ${getGuestFullName(booking)} to existing Resos booking`;
     showView('success');
@@ -1940,21 +1968,18 @@ async function excludeMatch(resosBooking) {
   if (geFieldIdx >= 0) {
     updatedFields[geFieldIdx] = { ...updatedFields[geFieldIdx], value: newGEValue };
   } else {
-    updatedFields.push({ _id: STATE.groupExcludeFieldId, value: newGEValue });
+    // Look up field definition to get the name
+    const fieldDef = STATE.customFields.find(f => f._id === STATE.groupExcludeFieldId);
+    const fieldName = fieldDef ? fieldDef.name : 'GROUP/EXCLUDE';
+    updatedFields.push({ _id: STATE.groupExcludeFieldId, name: fieldName, value: newGEValue });
   }
 
   try {
     const resosApi = new ResosAPI(STATE.settings);
     await resosApi.updateBooking(resosBooking._id, { customFields: updatedFields });
 
-    // Remove this match from suggested matches for this Newbook booking
-    const matches = STATE.suggestedMatches.get(bookingIdStr) || [];
-    const filteredMatches = matches.filter(m => m.resosBooking._id !== resosBooking._id);
-    if (filteredMatches.length > 0) {
-      STATE.suggestedMatches.set(bookingIdStr, filteredMatches);
-    } else {
-      STATE.suggestedMatches.delete(bookingIdStr);
-    }
+    // Refresh Resos data to get updated booking state
+    await refreshResosData();
 
     // Refresh the match view or go back to confirm if no more matches
     if (STATE.suggestedMatches.has(bookingIdStr)) {
@@ -1967,6 +1992,247 @@ async function excludeMatch(resosBooking) {
   } catch (error) {
     console.error('Error excluding match:', error);
     alert('Error excluding match: ' + error.message);
+  }
+}
+
+// ============================================================
+// GROUP LINK (Link to existing hotel guest booking)
+// ============================================================
+function getAllResosBookingsForGroupLink() {
+  // Get ALL active Resos bookings, with flag indicating if hotel-linked
+  const activeStatuses = new Set(['approved', 'arrived', 'seated', 'left']);
+  const allBookings = [];
+
+  for (const b of STATE.resosBookings) {
+    if (!activeStatuses.has(b.status)) continue;
+
+    let isHotelGuest = false;
+    let hasBookingRef = false;
+    let bookingRef = '';
+
+    if (b.customFields) {
+      for (const cf of b.customFields) {
+        // Check Hotel Guest field
+        if (STATE.hotelGuestFieldId && STATE.hotelGuestYesChoiceId &&
+            (cf._id === STATE.hotelGuestFieldId || cf.id === STATE.hotelGuestFieldId) &&
+            cf.value === STATE.hotelGuestYesChoiceId) {
+          isHotelGuest = true;
+        }
+        // Check Booking # field
+        if (STATE.bookingRefFieldId &&
+            (cf._id === STATE.bookingRefFieldId || cf.id === STATE.bookingRefFieldId) &&
+            cf.value) {
+          hasBookingRef = true;
+          bookingRef = String(cf.value);
+        }
+      }
+    }
+
+    const isHotelLinked = isHotelGuest || hasBookingRef;
+
+    allBookings.push({
+      resosBooking: b,
+      isHotelGuest,
+      hasBookingRef,
+      bookingRef,
+      isHotelLinked
+    });
+  }
+
+  // Sort: hotel-linked first, then by time
+  allBookings.sort((a, b) => {
+    if (a.isHotelLinked && !b.isHotelLinked) return -1;
+    if (!a.isHotelLinked && b.isHotelLinked) return 1;
+    // Secondary sort by time
+    const timeA = a.resosBooking.dateTime ? new Date(a.resosBooking.dateTime).getTime() : 0;
+    const timeB = b.resosBooking.dateTime ? new Date(b.resosBooking.dateTime).getTime() : 0;
+    return timeA - timeB;
+  });
+
+  return allBookings;
+}
+
+function showGroupLinkView() {
+  const booking = STATE.selectedBooking;
+  const bookingIdStr = String(booking.booking_id);
+  const isPackage = STATE.packageBookingIds.has(bookingIdStr);
+
+  // Populate Newbook guest summary
+  const nbName = getGuestFullName(booking);
+  const nbRoom = booking.site_name || 'N/A';
+  const nbPax = getTotalGuests(booking);
+  const nbPhone = getGuestContact(booking, 'mobile') || getGuestContact(booking, 'phone') || '';
+  const nbEmail = getGuestContact(booking, 'email') || '';
+
+  document.getElementById('group-nb-name').textContent = nbName;
+  document.getElementById('group-nb-room').innerHTML = `<span class="material-symbols-outlined">meeting_room</span> ${escapeHtml(nbRoom)}`;
+  document.getElementById('group-nb-pax').innerHTML = `<span class="material-symbols-outlined">group</span> ${nbPax}`;
+  document.getElementById('group-nb-id').textContent = `#${booking.booking_id}`;
+
+  const phoneEl = document.getElementById('group-nb-phone');
+  const emailEl = document.getElementById('group-nb-email');
+  phoneEl.innerHTML = nbPhone ? `<span class="material-symbols-outlined">phone</span> ${escapeHtml(nbPhone)}` : '';
+  emailEl.innerHTML = nbEmail ? `<span class="material-symbols-outlined">mail</span> ${escapeHtml(nbEmail)}` : '';
+
+  // Get all Resos bookings (hotel-linked first, then others)
+  const allBookings = getAllResosBookingsForGroupLink();
+
+  const list = document.getElementById('group-link-list');
+  list.innerHTML = '';
+
+  if (allBookings.length === 0) {
+    list.innerHTML = `
+      <div class="empty-list">
+        <span class="material-symbols-outlined">group_off</span>
+        <p>No Resos bookings found for this date.</p>
+      </div>
+    `;
+    showView('group-link');
+    return;
+  }
+
+  for (const { resosBooking, hasBookingRef, isHotelLinked } of allBookings) {
+    const card = document.createElement('div');
+    card.className = 'group-link-card';
+
+    const resosName = (resosBooking.guest && resosBooking.guest.name) || resosBooking.name || 'Unknown';
+    const resosTime = resosBooking.dateTime
+      ? new Date(resosBooking.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    const resosCovers = resosBooking.people || 1;
+    const resosStatus = resosBooking.status || '';
+    const resosTables = (resosBooking.tables && resosBooking.tables.length > 0)
+      ? resosBooking.tables.map(t => t.name || t._id || t).join(', ')
+      : '';
+
+    // Bed icon for hotel-linked bookings
+    const hotelIcon = isHotelLinked
+      ? '<span class="material-symbols-outlined group-hotel-icon" title="Linked to hotel booking">bed</span>'
+      : '';
+
+    card.innerHTML = `
+      <div class="group-card-header">
+        <div class="match-card-name">${escapeHtml(resosName)}</div>
+        ${hotelIcon}
+      </div>
+      <div class="match-card-details">
+        <span><span class="material-symbols-outlined">schedule</span> ${resosTime}</span>
+        <span><span class="material-symbols-outlined">group</span> ${resosCovers}</span>
+        ${resosTables ? `<span><span class="material-symbols-outlined">table_restaurant</span> ${escapeHtml(resosTables)}</span>` : ''}
+        <span class="match-status-badge">${escapeHtml(resosStatus)}</span>
+      </div>
+      <div class="match-card-actions">
+        <button class="group-add-btn">
+          <span class="material-symbols-outlined">link</span>
+          Link to Restaurant Booking
+        </button>
+      </div>
+    `;
+
+    card.querySelector('.group-add-btn').addEventListener('click', () =>
+      linkToResosBookingAsGroup(resosBooking, hasBookingRef)
+    );
+    list.appendChild(card);
+  }
+
+  showView('group-link');
+}
+
+async function linkToResosBookingAsGroup(resosBooking, existingHasBookingRef) {
+  const booking = STATE.selectedBooking;
+  if (!booking) return;
+
+  const bookingIdStr = String(booking.booking_id);
+  const isPackage = STATE.packageBookingIds.has(bookingIdStr);
+
+  // IMPORTANT: Preserve existing custom fields and merge in new values
+  const existingFields = resosBooking.customFields || [];
+  const updatedFields = [...existingFields];
+
+  // Helper to update or add a custom field
+  function setCustomField(fieldId, value, multipleChoiceValueName = null) {
+    const idx = updatedFields.findIndex(cf => cf._id === fieldId || cf.id === fieldId);
+    if (idx >= 0) {
+      const updated = { ...updatedFields[idx], value };
+      if (multipleChoiceValueName) updated.multipleChoiceValueName = multipleChoiceValueName;
+      updatedFields[idx] = updated;
+    } else {
+      const fieldDef = STATE.customFields.find(f => f._id === fieldId);
+      const fieldName = fieldDef ? fieldDef.name : '';
+      const newField = { _id: fieldId, name: fieldName, value };
+      if (multipleChoiceValueName) newField.multipleChoiceValueName = multipleChoiceValueName;
+      updatedFields.push(newField);
+    }
+  }
+
+  if (existingHasBookingRef) {
+    // Already has a Booking# - add to GROUP/EXCLUDE field
+    if (!STATE.groupExcludeFieldId) {
+      alert('Cannot add to group: GROUP/EXCLUDE custom field not configured in Resos');
+      return;
+    }
+
+    // Find existing GROUP/EXCLUDE field value
+    let existingGEValue = '';
+    const geFieldIdx = updatedFields.findIndex(
+      cf => cf._id === STATE.groupExcludeFieldId || cf.id === STATE.groupExcludeFieldId
+    );
+    if (geFieldIdx >= 0 && updatedFields[geFieldIdx].value) {
+      existingGEValue = String(updatedFields[geFieldIdx].value).trim();
+    }
+
+    // Append #bookingId to the field (preserving existing data)
+    const groupEntry = `#${bookingIdStr}`;
+    const newGEValue = existingGEValue ? `${existingGEValue}, ${groupEntry}` : groupEntry;
+
+    // Update or add the GROUP/EXCLUDE field
+    if (geFieldIdx >= 0) {
+      updatedFields[geFieldIdx] = { ...updatedFields[geFieldIdx], value: newGEValue };
+    } else {
+      const fieldDef = STATE.customFields.find(f => f._id === STATE.groupExcludeFieldId);
+      const fieldName = fieldDef ? fieldDef.name : 'GROUP/EXCLUDE';
+      updatedFields.push({ _id: STATE.groupExcludeFieldId, name: fieldName, value: newGEValue });
+    }
+  } else {
+    // No existing Booking# - set the Booking# field
+    if (STATE.bookingRefFieldId) {
+      setCustomField(STATE.bookingRefFieldId, bookingIdStr);
+    }
+  }
+
+  // Set hotel guest flag if available and not already set
+  if (STATE.hotelGuestFieldId && STATE.hotelGuestYesChoiceId) {
+    // Check if already set
+    const hasHotelGuestFlag = updatedFields.some(cf =>
+      (cf._id === STATE.hotelGuestFieldId || cf.id === STATE.hotelGuestFieldId) &&
+      cf.value === STATE.hotelGuestYesChoiceId
+    );
+    if (!hasHotelGuestFlag) {
+      setCustomField(STATE.hotelGuestFieldId, STATE.hotelGuestYesChoiceId, 'Yes');
+    }
+  }
+
+  // Set DBB flag if this is a package booking
+  if (STATE.dbbFieldId && STATE.dbbYesChoiceId && isPackage) {
+    setCustomField(STATE.dbbFieldId, STATE.dbbYesChoiceId, 'Yes');
+  }
+
+  try {
+    const resosApi = new ResosAPI(STATE.settings);
+    await resosApi.updateBooking(resosBooking._id, { customFields: updatedFields });
+
+    // Refresh Resos data to get updated booking state
+    await refreshResosData();
+
+    // Show success and return to list
+    document.getElementById('success-title').textContent = 'Booking Linked!';
+    document.getElementById('success-message').textContent =
+      `${getGuestFullName(booking)} → existing Resos booking`;
+    showView('success');
+    startSuccessCountdown();
+  } catch (error) {
+    console.error('Error linking to group:', error);
+    alert('Error linking to group: ' + error.message);
   }
 }
 
@@ -2276,9 +2542,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('confirm-link-btn').addEventListener('click', showMatchView);
   document.getElementById('back-to-confirm-btn').addEventListener('click', () => showView('confirm'));
 
+  // Group link (link to existing hotel guest booking)
+  document.getElementById('confirm-group-btn').addEventListener('click', showGroupLinkView);
+  document.getElementById('back-to-confirm-from-group-btn').addEventListener('click', () => showView('confirm'));
+
   // Home buttons on secondary views
   document.getElementById('confirm-home-btn').addEventListener('click', () => showView('guest-list'));
   document.getElementById('match-home-btn').addEventListener('click', () => showView('guest-list'));
+  document.getElementById('group-link-home-btn').addEventListener('click', () => showView('guest-list'));
 
   // Mark all as left
   document.getElementById('mark-all-left-btn').addEventListener('click', markAllAsLeft);

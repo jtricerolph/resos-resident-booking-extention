@@ -145,8 +145,11 @@
             </div>
           </div>
         </div>
-        <button id="confirm-link-btn" class="confirm-link-btn hidden" title="Link to existing Resos booking">
+        <button id="confirm-link-btn" class="confirm-link-btn hidden" title="Link to suggested match">
           <span class="material-symbols-outlined">link</span>
+        </button>
+        <button id="confirm-group-btn" class="confirm-group-btn" title="Link to existing hotel guest booking">
+          <span class="material-symbols-outlined">group_add</span>
         </button>
       </div>
 
@@ -239,11 +242,48 @@
       </div>
     </div>
 
+    <!-- View: Group Link Selection -->
+    <div id="view-group-link" class="view hidden">
+      <button id="back-to-confirm-from-group-btn" class="back-btn">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Back to create booking
+      </button>
+
+      <div class="match-header">
+        <h2>Link to Hotel Guest Booking</h2>
+        <p class="match-subtitle">Select a Resos booking to add this guest to</p>
+      </div>
+
+      <!-- Newbook Guest Summary -->
+      <div class="match-source-card group-source-card">
+        <div class="match-source-label">NEWBOOK GUEST</div>
+        <div class="match-source-name" id="group-nb-name"></div>
+        <div class="match-source-details">
+          <span id="group-nb-room"></span>
+          <span id="group-nb-pax"></span>
+          <span id="group-nb-id"></span>
+        </div>
+        <div class="match-source-contacts">
+          <span id="group-nb-phone"></span>
+          <span id="group-nb-email"></span>
+        </div>
+      </div>
+
+      <div id="group-link-list" class="match-list"></div>
+
+      <div class="bottom-bar">
+        <button id="group-link-home-btn" class="btn-home">
+          <span class="material-symbols-outlined">home</span>
+          Home
+        </button>
+      </div>
+    </div>
+
     <!-- View: Success -->
     <div id="view-success" class="view hidden">
       <div class="success-state">
         <span class="material-symbols-outlined">check_circle</span>
-        <h2>Booking Created!</h2>
+        <h2 id="success-title">Booking Created!</h2>
         <p id="success-message"></p>
         <button id="success-done-btn" class="btn-primary">Done</button>
         <span id="success-countdown" class="success-countdown"></span>
