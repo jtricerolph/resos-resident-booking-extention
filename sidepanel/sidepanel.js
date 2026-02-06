@@ -954,6 +954,7 @@ function createGuestCard(booking) {
   const nightIcons = getStayNightIcons(booking);
 
   const dbbInline = isPackage ? `<span class="package-badge">DBB ${totalGuests}pax</span>` : '';
+  const suggestedMatchBadge = (hasSuggestedMatch && !isMatched) ? '<span class="suggested-match-badge">SUGGESTED MATCH</span>' : '';
   const matchedIcon = isMatched ? '<span class="material-symbols-outlined matched-icon" title="Has Resos booking">restaurant</span>' : '';
 
   card.innerHTML = `
@@ -974,6 +975,7 @@ function createGuestCard(booking) {
         </span>
         <span class="guest-card-booking-id">#${booking.booking_id}</span>
         ${dbbInline}
+        ${suggestedMatchBadge}
       </div>
     </div>
     ${matchedIcon}

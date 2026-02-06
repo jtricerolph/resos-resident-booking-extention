@@ -437,7 +437,16 @@ body {
 
 .package-badge {
   padding: 1px 6px;
-  background-color: rgba(245, 158, 11, 0.15);
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.suggested-match-badge {
+  padding: 1px 6px;
+  background-color: rgba(251, 191, 36, 0.15);
   color: #fbbf24;
   border-radius: 3px;
   font-size: 10px;
