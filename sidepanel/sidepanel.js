@@ -1706,8 +1706,24 @@ function showMatchView() {
   const booking = STATE.selectedBooking;
   const bookingIdStr = String(booking.booking_id);
   const matches = STATE.suggestedMatches.get(bookingIdStr) || [];
+  const isPackage = STATE.packageBookingIds.has(bookingIdStr);
 
-  document.getElementById('match-guest-name').textContent = getGuestFullName(booking);
+  // Populate Newbook guest summary
+  const nbName = getGuestFullName(booking);
+  const nbRoom = booking.site_name || 'N/A';
+  const nbPax = getTotalGuests(booking);
+  const nbPhone = getGuestContact(booking, 'mobile') || getGuestContact(booking, 'phone') || '';
+  const nbEmail = getGuestContact(booking, 'email') || '';
+
+  document.getElementById('match-nb-name').textContent = nbName;
+  document.getElementById('match-nb-room').innerHTML = `<span class="material-symbols-outlined">meeting_room</span> ${escapeHtml(nbRoom)}`;
+  document.getElementById('match-nb-pax').innerHTML = `<span class="material-symbols-outlined">group</span> ${nbPax}`;
+  document.getElementById('match-nb-id').textContent = `#${booking.booking_id}`;
+
+  const phoneEl = document.getElementById('match-nb-phone');
+  const emailEl = document.getElementById('match-nb-email');
+  phoneEl.innerHTML = nbPhone ? `<span class="material-symbols-outlined">phone</span> ${escapeHtml(nbPhone)}` : '';
+  emailEl.innerHTML = nbEmail ? `<span class="material-symbols-outlined">mail</span> ${escapeHtml(nbEmail)}` : '';
 
   const list = document.getElementById('match-list');
   list.innerHTML = '';
@@ -1716,25 +1732,63 @@ function showMatchView() {
     const card = document.createElement('div');
     card.className = 'match-card';
 
-    const name = (resosBooking.guest && resosBooking.guest.name) || resosBooking.name || 'Unknown';
-    const time = resosBooking.dateTime
+    const resosName = (resosBooking.guest && resosBooking.guest.name) || resosBooking.name || 'Unknown';
+    const resosTime = resosBooking.dateTime
       ? new Date(resosBooking.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : '';
-    const covers = resosBooking.people || 1;
-    const status = resosBooking.status || '';
-    const reasonsText = matchReasons.join(', ');
+    const resosCovers = resosBooking.people || 1;
+    const resosStatus = resosBooking.status || '';
+    const resosPhone = (resosBooking.guest && resosBooking.guest.phone) || '';
+    const resosEmail = (resosBooking.guest && resosBooking.guest.email) || '';
+
+    // Build match reason badges
+    const reasonBadges = matchReasons.map(r => `<span class="match-reason-badge">${escapeHtml(r)}</span>`).join('');
+
+    // Build fields that will be updated
+    const fieldsToUpdate = [];
+    fieldsToUpdate.push({ label: 'Booking #', oldVal: '-', newVal: bookingIdStr });
+    if (STATE.hotelGuestFieldId && STATE.hotelGuestYesChoiceId) {
+      fieldsToUpdate.push({ label: 'Hotel Guest', oldVal: '-', newVal: 'Yes' });
+    }
+    if (STATE.dbbFieldId && STATE.dbbYesChoiceId && isPackage) {
+      fieldsToUpdate.push({ label: 'DBB', oldVal: '-', newVal: 'Yes' });
+    }
+
+    const fieldRows = fieldsToUpdate.map(f => `
+      <div class="match-field-row">
+        <span class="match-field-label">${escapeHtml(f.label)}</span>
+        <span class="match-field-old">${escapeHtml(f.oldVal)}</span>
+        <span class="material-symbols-outlined match-field-arrow">arrow_forward</span>
+        <span class="match-field-new">${escapeHtml(f.newVal)}</span>
+      </div>
+    `).join('');
 
     card.innerHTML = `
-      <div class="match-card-name">${escapeHtml(name)}</div>
-      <div class="match-card-details">
-        <span>${time}</span>
-        <span>${covers} covers</span>
-        <span>${status}</span>
+      <div class="match-card-header">
+        <div class="match-card-label">RESOS BOOKING</div>
+        <div class="match-card-reasons">${reasonBadges}</div>
       </div>
-      <div class="match-card-reasons">Matched by: ${escapeHtml(reasonsText)}</div>
+      <div class="match-card-name">${escapeHtml(resosName)}</div>
+      <div class="match-card-details">
+        <span><span class="material-symbols-outlined">schedule</span> ${resosTime}</span>
+        <span><span class="material-symbols-outlined">group</span> ${resosCovers}</span>
+        <span class="match-status-badge">${escapeHtml(resosStatus)}</span>
+      </div>
+      <div class="match-card-contacts">
+        ${resosPhone ? `<span><span class="material-symbols-outlined">phone</span> ${escapeHtml(resosPhone)}</span>` : ''}
+        ${resosEmail ? `<span><span class="material-symbols-outlined">mail</span> ${escapeHtml(resosEmail)}</span>` : ''}
+      </div>
+      <div class="match-fields-section">
+        <div class="match-fields-title">Fields to update:</div>
+        ${fieldRows}
+      </div>
+      <button class="match-link-btn">
+        <span class="material-symbols-outlined">link</span>
+        Link Booking
+      </button>
     `;
 
-    card.addEventListener('click', () => linkToResosBooking(resosBooking));
+    card.querySelector('.match-link-btn').addEventListener('click', () => linkToResosBooking(resosBooking));
     list.appendChild(card);
   }
 

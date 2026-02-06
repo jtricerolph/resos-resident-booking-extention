@@ -1095,7 +1095,7 @@ body {
 
 /* Match View */
 .match-header {
-  padding: 16px;
+  padding: 16px 16px 8px;
 }
 
 .match-header h2 {
@@ -1110,11 +1110,72 @@ body {
   color: #9e9bae;
 }
 
+/* Newbook Guest Summary Card */
+.match-source-card {
+  margin: 0 16px 12px;
+  padding: 12px;
+  background-color: #1e1d2a;
+  border: 1px solid #7c6fbd;
+  border-radius: 8px;
+}
+
+.match-source-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7c6fbd;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.match-source-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e2e0ea;
+  margin-bottom: 6px;
+}
+
+.match-source-details {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #9e9bae;
+  margin-bottom: 4px;
+}
+
+.match-source-details span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-source-details .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.match-source-contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: #8b8a99;
+}
+
+.match-source-contacts span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-source-contacts .material-symbols-outlined {
+  font-size: 12px;
+}
+
 .match-list {
-  padding: 0 16px;
+  padding: 0 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  overflow-y: auto;
 }
 
 .match-card {
@@ -1122,31 +1183,160 @@ body {
   border: 1px solid #3d3b4d;
   border-radius: 8px;
   padding: 12px;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
 .match-card:hover {
   border-color: #f59e0b;
-  background-color: #33313f;
+}
+
+.match-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.match-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #f59e0b;
+  letter-spacing: 0.05em;
 }
 
 .match-card-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: #e2e0ea;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .match-card-details {
   font-size: 12px;
   color: #9e9bae;
   display: flex;
+  align-items: center;
   gap: 12px;
+  margin-bottom: 4px;
+}
+
+.match-card-details span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-card-details .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.match-status-badge {
+  padding: 2px 6px;
+  background-color: rgba(110, 231, 183, 0.15);
+  color: #6ee7b7;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.match-card-contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: #8b8a99;
+  margin-bottom: 12px;
+}
+
+.match-card-contacts span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-card-contacts .material-symbols-outlined {
+  font-size: 12px;
 }
 
 .match-card-reasons {
+  display: flex;
+  gap: 6px;
+}
+
+.match-reason-badge {
+  padding: 2px 8px;
+  background-color: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.match-fields-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #3d3b4d;
+}
+
+.match-fields-title {
   font-size: 11px;
-  color: #f59e0b;
-  margin-top: 6px;
+  color: #6b6a79;
+  margin-bottom: 8px;
+}
+
+.match-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.match-field-label {
+  color: #9e9bae;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.match-field-old {
+  color: #6b6a79;
+  min-width: 50px;
+}
+
+.match-field-arrow {
+  font-size: 14px;
+  color: #6b6a79;
+}
+
+.match-field-new {
+  color: #6ee7b7;
+  font-weight: 500;
+}
+
+.match-link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 16px;
+  background-color: #f59e0b;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.match-link-btn:hover {
+  background-color: #d97706;
+}
+
+.match-link-btn .material-symbols-outlined {
+  font-size: 18px;
 }
