@@ -1740,6 +1740,9 @@ function showMatchView() {
     const resosStatus = resosBooking.status || '';
     const resosPhone = (resosBooking.guest && resosBooking.guest.phone) || '';
     const resosEmail = (resosBooking.guest && resosBooking.guest.email) || '';
+    const resosTables = (resosBooking.tables && resosBooking.tables.length > 0)
+      ? resosBooking.tables.map(t => t.name || t._id || t).join(', ')
+      : '';
 
     // Build match reason badges
     const reasonBadges = matchReasons.map(r => `<span class="match-reason-badge">${escapeHtml(r)}</span>`).join('');
@@ -1779,6 +1782,7 @@ function showMatchView() {
       <div class="match-card-details">
         <span><span class="material-symbols-outlined">schedule</span> ${resosTime}</span>
         <span><span class="material-symbols-outlined">group</span> ${resosCovers}</span>
+        ${resosTables ? `<span><span class="material-symbols-outlined">table_restaurant</span> ${escapeHtml(resosTables)}</span>` : ''}
         <span class="match-status-badge">${escapeHtml(resosStatus)}</span>
       </div>
       <div class="match-card-contacts">
