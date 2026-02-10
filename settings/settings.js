@@ -10,7 +10,8 @@ const DEFAULT_SETTINGS = {
   sendGuestNotification: false,
   bookingRefFieldId: '',
   hotelGuestFieldId: '',
-  dbbFieldId: ''
+  dbbFieldId: '',
+  groupExcludeFieldId: ''
 };
 
 const elements = {
@@ -26,6 +27,7 @@ const elements = {
   bookingRefFieldId: document.getElementById('bookingRefFieldId'),
   hotelGuestFieldId: document.getElementById('hotelGuestFieldId'),
   dbbFieldId: document.getElementById('dbbFieldId'),
+  groupExcludeFieldId: document.getElementById('groupExcludeFieldId'),
   testNewbook: document.getElementById('testNewbook'),
   testResos: document.getElementById('testResos'),
   loadCustomFields: document.getElementById('loadCustomFields'),
@@ -52,10 +54,11 @@ async function loadSettings() {
     elements.bookingRefFieldId.dataset.savedValue = settings.bookingRefFieldId || '';
     elements.hotelGuestFieldId.dataset.savedValue = settings.hotelGuestFieldId || '';
     elements.dbbFieldId.dataset.savedValue = settings.dbbFieldId || '';
+    elements.groupExcludeFieldId.dataset.savedValue = settings.groupExcludeFieldId || '';
 
     // If we have a Resos API key, try to load custom fields
     if (settings.resosApiKey) {
-      await loadCustomFieldOptions(settings.resosApiKey, settings.bookingRefFieldId, settings.hotelGuestFieldId, settings.dbbFieldId);
+      await loadCustomFieldOptions(settings.resosApiKey, settings.bookingRefFieldId, settings.hotelGuestFieldId, settings.dbbFieldId, settings.groupExcludeFieldId);
     }
   } catch (error) {
     showStatus('Error loading settings: ' + error.message, 'error');
@@ -97,7 +100,8 @@ async function saveSettings() {
       sendGuestNotification: elements.sendGuestNotification.checked,
       bookingRefFieldId: elements.bookingRefFieldId.value,
       hotelGuestFieldId: elements.hotelGuestFieldId.value,
-      dbbFieldId: elements.dbbFieldId.value
+      dbbFieldId: elements.dbbFieldId.value,
+      groupExcludeFieldId: elements.groupExcludeFieldId.value
     };
 
     await chrome.storage.sync.set({ settings });
@@ -203,7 +207,7 @@ async function testResosConnection() {
   }
 }
 
-async function loadCustomFieldOptions(apiKeyOverride, selectBookingRef, selectHotelGuest, selectDbb) {
+async function loadCustomFieldOptions(apiKeyOverride, selectBookingRef, selectHotelGuest, selectDbb, selectGroupExclude) {
   const apiKey = apiKeyOverride || elements.resosApiKey.value.trim();
 
   if (!apiKey) {
@@ -237,6 +241,8 @@ async function loadCustomFieldOptions(apiKeyOverride, selectBookingRef, selectHo
     populateFieldSelect(elements.hotelGuestFieldId, fields, selectHotelGuest || elements.hotelGuestFieldId.dataset.savedValue);
     // Populate DBB field dropdown
     populateFieldSelect(elements.dbbFieldId, fields, selectDbb || elements.dbbFieldId.dataset.savedValue);
+    // Populate GROUP/EXCLUDE field dropdown
+    populateFieldSelect(elements.groupExcludeFieldId, fields, selectGroupExclude || elements.groupExcludeFieldId.dataset.savedValue);
 
     if (!apiKeyOverride) {
       showStatus(`Loaded ${fields.length} custom fields from Resos.`, 'success');

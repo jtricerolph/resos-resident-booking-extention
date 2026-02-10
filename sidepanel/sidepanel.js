@@ -497,9 +497,13 @@ function resolveCustomFieldMappings() {
     }
   }
 
-  // GROUP/EXCLUDE field (auto-detect only)
-  const geField = STATE.customFields.find(f => (f.name || '') === 'GROUP/EXCLUDE');
-  STATE.groupExcludeFieldId = geField ? geField._id : null;
+  // GROUP/EXCLUDE field
+  if (settings.groupExcludeFieldId) {
+    STATE.groupExcludeFieldId = settings.groupExcludeFieldId;
+  } else {
+    const geField = STATE.customFields.find(f => (f.name || '') === 'GROUP/EXCLUDE');
+    STATE.groupExcludeFieldId = geField ? geField._id : null;
+  }
 
   // DBB / Package field
   if (settings.dbbFieldId) {
